@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AnimeSmerens | Archive</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Babel Standalone (Required for JSX) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Babel Standalone -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,54 +20,61 @@
     <style>
         :root {
             --accent: #facc15;
+            --bg-color: #050505;
         }
         body {
-            background-color: #050505;
+            background-color: var(--bg-color);
             color: white;
             margin: 0;
             overflow-x: hidden;
             font-family: 'Space Grotesk', sans-serif;
             -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
         
-        /* Font Families */
         .font-oswald { font-family: 'Oswald', sans-serif; }
         .font-grotesk { font-family: 'Space Grotesk', sans-serif; }
 
-        /* Scrollbar Hiding */
         ::-webkit-scrollbar { display: none; }
         * { -ms-overflow-style: none; scrollbar-width: none; }
 
-        /* Text Effects */
-        .text-stroke {
-            -webkit-text-stroke: 2px rgba(255, 255, 255, 0.5);
-            color: transparent;
-        }
-        .text-stroke-thin {
-            -webkit-text-stroke: 1px rgba(255, 255, 255, 0.3);
-            color: transparent;
+        .gpu-accelerated {
+            transform: translate3d(0, 0, 0);
+            backface-visibility: hidden;
+            perspective: 1000px;
+            will-change: transform, opacity;
         }
 
-        /* Utilities */
-        .accent-text { color: var(--accent); transition: color 1s ease; }
-        .accent-bg { background-color: var(--accent); transition: background-color 1s ease; }
+        .no-flicker {
+            -webkit-backface-visibility: hidden;
+            -moz-backface-visibility: hidden;
+            -webkit-transform: translate3d(0, 0, 0);
+            -moz-transform: translate3d(0, 0, 0);
+        }
+
+        .text-stroke { -webkit-text-stroke: 2px rgba(255, 255, 255, 0.5); color: transparent; }
+        .text-stroke-thin { -webkit-text-stroke: 1px rgba(255, 255, 255, 0.3); color: transparent; }
+
+        @keyframes scroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .animate-marquee { animation: scroll 40s linear infinite; }
+        .animate-marquee:hover { animation-play-state: paused; }
+
+        .accent-text { color: var(--accent); transition: color 0.5s ease; }
+        .accent-bg { background-color: var(--accent); transition: background-color 0.5s ease; }
         
         .mask-linear-gradient {
             mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
             -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
         }
 
-        /* Selection */
-        ::selection {
-            background: var(--accent);
-            color: black;
-        }
-        
-        button, a { cursor: pointer; }
+        /* Custom Form Elements */
+        select option { background-color: #000; color: white; }
+
+        ::selection { background: var(--accent); color: black; }
+        button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
     </style>
 
-    <!-- Import Map for React & Framer Motion -->
-    <!-- FIX: Added ?external=react,react-dom to prevent duplicate React instances -->
+    <!-- Import Map -->
     <script type="importmap">
     {
       "imports": {
@@ -82,53 +89,87 @@
 <body>
     <div id="root"></div>
 
-    <!-- Application Logic -->
     <script type="text/babel" data-type="module">
-        import React, { useState, useEffect, useRef } from 'react';
+        import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
         import ReactDOM from 'react-dom/client';
         import { motion, useScroll, useTransform, useSpring, useInView, useMotionValue, AnimatePresence, useAnimate, stagger } from 'framer-motion';
-        import { Star, TrendingUp, Users, Clock, Play, Heart, ArrowUpRight, Search, X, Hash, Shuffle, ChevronLeft, ChevronRight } from 'lucide-react';
+        import { Star, TrendingUp, Users, Clock, Play, Heart, ArrowUpRight, Search, X, Hash, Shuffle, ChevronLeft, ChevronRight, Monitor, Trash2, List, Grid, User, LogIn, LogOut, Mail, Lock, Key, Plus, Minus, CheckCircle, PauseCircle, PlayCircle, XCircle, BookOpen } from 'lucide-react';
+        
+        // --- FIREBASE IMPORTS ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- CONSTANTS ---
+        // --- GLOBAL FIREBASE INIT ---
+        let auth;
+        let db;
+        // Use the environment provided app ID for path partitioning, fallback to default
+        const pathAppId = typeof __app_id !== 'undefined' ? __app_id : 'anime-smerens-default';
+
+        try {
+            // Priority: User's provided config to ensure they connect to THEIR project where they have admin access
+            const userFirebaseConfig = {
+                apiKey: "AIzaSyAbPe1iD_eyOdgeIppbA0eOGL0hooz1Gaw",
+                authDomain: "anime-smerens.firebaseapp.com",
+                projectId: "anime-smerens",
+                storageBucket: "anime-smerens.firebasestorage.app",
+                messagingSenderId: "28256743025",
+                appId: "1:28256743025:web:8a2cf88ae3c411485675d0",
+                measurementId: "G-GFBF7VDW1W"
+            };
+
+            // Use environment config if user config is invalid/missing, otherwise prefer user config for custom auth features
+            const firebaseConfig = userFirebaseConfig.projectId ? userFirebaseConfig : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : userFirebaseConfig);
+
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            
+            console.log("🔥 FIREBASE PROJECT:", app.options.projectId);
+
+            try {
+                if (typeof window !== 'undefined') {
+                    const analytics = getAnalytics(app);
+                }
+            } catch (err) {
+                console.warn("Analytics failed to load:", err);
+            }
+        } catch (e) {
+            console.error("Firebase Global Init Failed:", e);
+        }
+
+        // --- DATA CONSTANTS ---
         const KANJI_CHARS = ["序", "破", "急", "壱", "弐", "参", "零", "無", "空", "幻", "影", "響"];
         const GENRES = ["Action", "Adventure", "Cyberpunk", "Drama", "Ecchi", "Fantasy", "Horror", "Mecha", "Music", "Mystery", "Psychological", "Romance", "Sci-Fi", "Slice of Life", "Sports", "Supernatural", "Thriller"];
+        const STATUS_OPTIONS = ["Watching", "Planning", "Completed", "On Hold", "Dropped"];
 
         const HERO_SLIDES = [
-            {
-                id: 'edgerunners',
-                query: 'Cyberpunk: Edgerunners',
-                color: '#facc15', // Yellow-400
-                image: 'https://images.unsplash.com/photo-1555680202-c86f0e12f086?q=80&w=2070&auto=format&fit=crop', 
-            },
-            {
-                id: 'bleach',
-                query: 'Bleach: Thousand-Year Blood War',
-                color: '#f97316', // Orange-500
-                image: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=2070&auto=format&fit=crop',
-            },
-            {
-                id: 'chainsaw',
-                query: 'Chainsaw Man',
-                color: '#14b8a6', // Teal-500
-                image: 'https://images.unsplash.com/photo-1618336753974-aae8e04506aa?q=80&w=2070&auto=format&fit=crop',
-            },
-            {
-                id: 'jjk',
-                query: 'Jujutsu Kaisen',
-                color: '#ef4444', // Red-500
-                image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=2068&auto=format&fit=crop',
-            }
+            { id: 'edgerunners', query: 'Cyberpunk: Edgerunners', color: '#facc15', image: 'https://images.unsplash.com/photo-1555680202-c86f0e12f086?q=80&w=2070&auto=format&fit=crop' },
+            { id: 'bleach', query: 'Bleach: Thousand-Year Blood War', color: '#f97316', image: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=2070&auto=format&fit=crop' },
+            { id: 'chainsaw', query: 'Chainsaw Man', color: '#14b8a6', image: 'https://images.unsplash.com/photo-1618336753974-aae8e04506aa?q=80&w=2070&auto=format&fit=crop' },
+            { id: 'jjk', query: 'Jujutsu Kaisen', color: '#ef4444', image: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=2068&auto=format&fit=crop' }
         ];
 
         // --- COMPONENTS ---
+        
+        const SmoothHeroImage = ({ src, alt }) => {
+            const [isLoaded, setIsLoaded] = useState(false);
+            return (
+                <motion.img 
+                    src={src} 
+                    alt={alt} 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: isLoaded ? 1 : 0 }}
+                    transition={{ duration: 0.8, ease: "easeOut" }}
+                    onLoad={() => setIsLoaded(true)}
+                    className="h-full w-full object-cover object-center"
+                />
+            );
+        };
 
-        // 1. INTRO SEQUENCE
         const IntroSequence = ({ onReveal, onComplete }) => {
-            const [shouldPlay, setShouldPlay] = useState(() => {
-                const hasPlayed = sessionStorage.getItem('animesmerens_intro_v1');
-                return !hasPlayed;
-            });
-
+            const [shouldPlay, setShouldPlay] = useState(() => !sessionStorage.getItem('animesmerens_intro_v2'));
             const [scope, animate] = useAnimate();
             const counterRef = useRef(null);
             const kanjiRef = useRef(null);
@@ -139,96 +180,69 @@
                     if (onComplete) onComplete();
                     return;
                 }
-
-                sessionStorage.setItem('animesmerens_intro_v1', 'true');
+                sessionStorage.setItem('animesmerens_intro_v2', 'true');
 
                 const runSequence = async () => {
-                    // PHASE 1: COLD BOOT
                     let count = 0;
                     const counterInterval = setInterval(() => {
-                        count += Math.floor(Math.random() * 5) + 1;
-                        if (count > 100) count = 100;
+                        count = Math.min(count + Math.floor(Math.random() * 8) + 2, 100);
                         if (counterRef.current) counterRef.current.textContent = `${count.toString().padStart(3, '0')}%`;
                         if (count === 100) clearInterval(counterInterval);
                     }, 30); 
 
                     const kanjiInterval = setInterval(() => {
-                        if (kanjiRef.current) {
-                            kanjiRef.current.textContent = KANJI_CHARS[Math.floor(Math.random() * KANJI_CHARS.length)];
-                        }
-                    }, 100);
+                        if (kanjiRef.current) kanjiRef.current.textContent = KANJI_CHARS[Math.floor(Math.random() * KANJI_CHARS.length)];
+                    }, 80);
 
-                    await new Promise(r => setTimeout(r, 2000));
+                    await new Promise(r => setTimeout(r, 1800));
                     clearInterval(kanjiInterval);
                     
                     await animate([
-                        [kanjiRef.current, { opacity: 0 }, { duration: 0.2 }],
-                        [counterRef.current, { opacity: 0 }, { duration: 0.2, at: "<" }]
+                        [kanjiRef.current, { opacity: 0 }, { duration: 0.3 }],
+                        [counterRef.current, { opacity: 0 }, { duration: 0.3, at: "<" }]
                     ]);
 
-                    // PHASE 2: KINETIC TYPO
                     await animate("#text-container", { opacity: 1 }, { duration: 0 });
-
+                    
                     await animate([
                         ["#text-top", { x: '0%' }, { duration: 1.2, ease: [0.22, 1, 0.36, 1] }],
                         ["#text-bottom", { x: '0%' }, { duration: 1.2, ease: [0.22, 1, 0.36, 1], at: "<" }]
                     ]);
 
-                    await animate([
-                        ["#text-top", { scaleY: 1.5 }, { duration: 0.1, at: "+0.1" }],
-                        ["#text-bottom", { scaleY: 1.5 }, { duration: 0.1, at: "<" }]
-                    ]);
-                    
-                    await animate([
-                        ["#text-top", { scaleY: 1 }, { duration: 0.2 }],
-                        ["#text-bottom", { scaleY: 1 }, { duration: 0.2, at: "<" }]
-                    ]);
-
-                    // PHASE 3: REVEAL
-                    await animate([
-                        ["#text-top", { color: "transparent", WebkitTextStroke: "2px white" }, { duration: 0.2 }],
-                        ["#text-bottom", { color: "transparent", WebkitTextStroke: "2px white" }, { duration: 0.2, at: "<" }]
-                    ]);
-
                     if (onReveal) onReveal();
 
                     await Promise.all([
-                        animate(".shutter-slice", { height: "0%" }, { delay: stagger(0.1), duration: 1.2, ease: "easeInOut" }),
-                        animate("#text-container", { scale: 1.1, opacity: 0 }, { duration: 1, ease: "easeIn" }),
-                        animate(scope.current, { opacity: 0 }, { duration: 1, delay: 0.5 }) 
+                        animate(".shutter-slice", { height: "0%" }, { delay: stagger(0.05), duration: 0.8, ease: "easeInOut" }),
+                        animate("#text-container", { scale: 1.1, opacity: 0 }, { duration: 0.8, ease: "easeIn" }),
+                        animate(scope.current, { opacity: 0 }, { duration: 0.8, delay: 0.2 }) 
                     ]);
 
                     if (scope.current) scope.current.style.display = 'none';
                     if (onComplete) onComplete();
                 };
-
                 runSequence();
             }, [shouldPlay]);
 
             if (!shouldPlay) return null;
 
             return (
-                <div ref={scope} className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none bg-black">
+                <div ref={scope} className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none bg-black gpu-accelerated">
                     <div className="absolute inset-0 flex h-full w-full pointer-events-auto">
                         {[...Array(5)].map((_, i) => (
-                            <div key={i} className="shutter-slice h-full w-1/5 bg-[#050505] border-r border-white/5 origin-top"></div>
+                            <div key={i} className="shutter-slice h-full w-1/5 bg-[#050505] border-r border-white/5 origin-top will-change-transform"></div>
                         ))}
                     </div>
                     <div className="relative z-10 w-full h-full flex items-center justify-center overflow-hidden">
-                        <div ref={kanjiRef} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 font-oswald text-yellow-400 text-6xl font-bold opacity-100"></div>
+                        <div ref={kanjiRef} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 font-oswald text-yellow-400 text-6xl font-bold opacity-100 will-change-opacity"></div>
                         <div className="absolute bottom-10 right-10 overflow-hidden">
-                             <div ref={counterRef} className="font-grotesk font-bold text-4xl text-white tracking-widest">000%</div>
+                             <div ref={counterRef} className="font-grotesk font-bold text-4xl text-white tracking-widest will-change-opacity">000%</div>
                         </div>
-                        <div id="text-container" className="opacity-0 flex flex-col items-center justify-center mix-blend-difference w-full">
+                        <div id="text-container" className="opacity-0 flex flex-col items-center justify-center mix-blend-difference w-full will-change-transform">
                             <div className="overflow-hidden py-10 -my-10 w-full flex justify-center">
-                                <h1 id="text-top" className="font-oswald text-[15vw] leading-[0.9] font-bold text-white tracking-tighter translate-x-[-100%] origin-bottom">
-                                    ANIME
-                                </h1>
+                                <h1 id="text-top" className="font-oswald text-[15vw] leading-[0.9] font-bold text-white tracking-tighter translate-x-[-100%] origin-bottom will-change-transform">ANIME</h1>
                             </div>
                             <div className="overflow-hidden py-10 -my-10 w-full flex justify-center">
-                                <h1 id="text-bottom" className="font-oswald text-[15vw] leading-[0.9] font-bold text-white tracking-tighter translate-x-[100%] origin-top">
-                                    SMERENS
-                                </h1>
+                                <h1 id="text-bottom" className="font-oswald text-[15vw] leading-[0.9] font-bold text-white tracking-tighter translate-x-[100%] origin-top will-change-transform">SMERENS</h1>
                             </div>
                         </div>
                     </div>
@@ -236,7 +250,316 @@
             );
         };
 
-        // 2. SEARCH OVERLAY
+        // AuthPage Component
+        const AuthPage = ({ isOpen, onClose, user, onLogin, onRegister, onLogout, error, clearError }) => {
+            const [email, setEmail] = useState("");
+            const [password, setPassword] = useState("");
+            const [isRegistering, setIsRegistering] = useState(false);
+
+            useEffect(() => {
+                if(isOpen) {
+                    setEmail("");
+                    setPassword("");
+                    if(clearError) clearError();
+                }
+            }, [isOpen, isRegistering]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (isRegistering) {
+                    onRegister(email, password);
+                } else {
+                    onLogin(email, password);
+                }
+            };
+
+            return (
+                <AnimatePresence>
+                    {isOpen && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center overflow-hidden"
+                        >
+                            <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
+                                <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(50,50,50,0.4),transparent_70%)]" />
+                                <div className="absolute bottom-0 right-0 w-1/2 h-1/2 bg-[var(--accent)] blur-[150px] opacity-10" />
+                            </div>
+
+                            <button onClick={onClose} className="absolute top-8 right-8 z-[201] p-4 rounded-full bg-white/5 hover:bg-white/20 transition text-white border border-white/10 active:scale-95 group">
+                                <X size={24} className="group-hover:rotate-90 transition-transform duration-300" />
+                            </button>
+
+                            <motion.div 
+                                initial={{ y: 30, opacity: 0 }} 
+                                animate={{ y: 0, opacity: 1 }} 
+                                transition={{ delay: 0.1 }}
+                                className="relative z-10 w-full max-w-md px-6"
+                            >
+                                <div className="text-center mb-12">
+                                    <h2 className="font-oswald text-6xl font-bold uppercase text-white mb-2 tracking-tighter">
+                                        System <span className="text-stroke">Access</span>
+                                    </h2>
+                                    <p className="font-grotesk text-[var(--accent)] text-sm tracking-widest uppercase">
+                                        {user && !user.isAnonymous ? "/// IDENTITY VERIFIED" : "/// AUTHENTICATION REQUIRED"}
+                                    </p>
+                                </div>
+
+                                {user && !user.isAnonymous ? (
+                                    <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-8 flex flex-col items-center gap-6">
+                                        <div className="w-24 h-24 rounded-full border-2 border-[var(--accent)] p-1">
+                                            <div className="w-full h-full rounded-full bg-white/10 flex items-center justify-center overflow-hidden">
+                                                <User size={40} className="text-white/50" />
+                                            </div>
+                                        </div>
+                                        <div className="text-center">
+                                            <p className="text-white font-oswald text-xl tracking-wide">{user.email}</p>
+                                            <p className="text-white/40 font-grotesk text-xs mt-1 uppercase tracking-widest">Session Active</p>
+                                        </div>
+                                        <button 
+                                            onClick={() => { onLogout(); onClose(); }}
+                                            className="w-full py-4 border border-red-500/50 text-red-400 font-oswald font-bold uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all duration-300 rounded-lg flex items-center justify-center gap-2"
+                                        >
+                                            <LogOut size={18} /> Terminate Session
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+                                        {error && (
+                                            <div className="mb-6 p-4 bg-red-500/10 border-l-2 border-red-500 text-red-200 text-xs font-grotesk">
+                                                <span className="font-bold block mb-1">ERROR CODE: AUTH_FAIL</span>
+                                                {error}
+                                                {error.includes("operation-not-allowed") && (
+                                                    <p className="mt-2 text-white/50 text-[10px] leading-tight">
+                                                        ADMIN ACTION: Go to Firebase Console &rarr; Authentication &rarr; Sign-in method &rarr; Enable Email/Password.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+                                            <div className="group relative">
+                                                <Mail className="absolute left-0 top-3 text-white/30 group-focus-within:text-[var(--accent)] transition-colors" size={20} />
+                                                <input 
+                                                    type="email" 
+                                                    placeholder="AGENT ID (EMAIL)" 
+                                                    value={email}
+                                                    onChange={(e) => setEmail(e.target.value)}
+                                                    className="w-full bg-transparent border-b border-white/20 py-3 pl-8 text-white font-grotesk outline-none focus:border-[var(--accent)] transition-colors placeholder:text-white/20"
+                                                    required
+                                                />
+                                            </div>
+                                            <div className="group relative">
+                                                <Lock className="absolute left-0 top-3 text-white/30 group-focus-within:text-[var(--accent)] transition-colors" size={20} />
+                                                <input 
+                                                    type="password" 
+                                                    placeholder="ACCESS KEY (PASSWORD)" 
+                                                    value={password}
+                                                    onChange={(e) => setPassword(e.target.value)}
+                                                    className="w-full bg-transparent border-b border-white/20 py-3 pl-8 text-white font-grotesk outline-none focus:border-[var(--accent)] transition-colors placeholder:text-white/20"
+                                                    required
+                                                />
+                                            </div>
+
+                                            <button 
+                                                type="submit"
+                                                className="mt-4 w-full py-4 bg-white text-black font-oswald font-bold text-lg uppercase tracking-widest hover:bg-[var(--accent)] transition-colors rounded-lg flex items-center justify-center gap-2"
+                                            >
+                                                {isRegistering ? <Key size={20} /> : <LogIn size={20} />}
+                                                <span>{isRegistering ? "Initialize New Agent" : "Access Mainframe"}</span>
+                                            </button>
+                                        </form>
+
+                                        <div className="mt-8 text-center">
+                                            <button 
+                                                onClick={() => { setIsRegistering(!isRegistering); if(clearError) clearError(); }}
+                                                className="text-xs font-grotesk text-white/40 hover:text-white transition-colors uppercase tracking-widest border-b border-transparent hover:border-white"
+                                            >
+                                                {isRegistering ? "Return to Login Sequence" : "New User? Request Access"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            );
+        };
+
+        // UPDATED: Profile List Manager (Favorites Overlay)
+        const FavoritesOverlay = ({ isOpen, onClose, favorites, onSelect, onUpdateEntry, onDeleteEntry }) => {
+            const [viewMode, setViewMode] = useState("list"); // Default to list for easier management
+
+            // Prevent scroll when open
+            useEffect(() => {
+                if (isOpen) document.body.style.overflow = 'hidden';
+                else document.body.style.overflow = '';
+                return () => { document.body.style.overflow = ''; };
+            }, [isOpen]);
+
+            // Helper to get status icon
+            const getStatusIcon = (status) => {
+                switch(status) {
+                    case 'Watching': return <PlayCircle size={14} className="text-[var(--accent)]" />;
+                    case 'Completed': return <CheckCircle size={14} className="text-green-400" />;
+                    case 'On Hold': return <PauseCircle size={14} className="text-orange-400" />;
+                    case 'Dropped': return <XCircle size={14} className="text-red-400" />;
+                    default: return <BookOpen size={14} className="text-blue-400" />; // Planning
+                }
+            };
+
+            return (
+                <AnimatePresence>
+                    {isOpen && (
+                        <motion.div
+                            initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+                            animate={{ opacity: 1, backdropFilter: "blur(20px)" }}
+                            exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
+                            className="fixed inset-0 z-[100] bg-black/90 overflow-y-auto no-flicker"
+                        >
+                            <div className="flex flex-col items-center min-h-screen pt-24 px-4 pb-20 w-full relative">
+                                <button onClick={onClose} className="fixed top-6 right-6 z-[101] p-3 rounded-full bg-white/10 hover:bg-white/20 transition text-white border border-white/10 active:scale-95">
+                                    <X size={20} />
+                                </button>
+                                
+                                <div className="w-full max-w-6xl">
+                                    <div className="flex flex-col md:flex-row justify-between items-end mb-8 border-b border-white/10 pb-4 gap-4">
+                                        <div>
+                                            <h2 className="font-oswald text-4xl md:text-6xl font-bold uppercase text-white leading-none">Profile <span className="accent-text">List</span></h2>
+                                            <p className="font-grotesk text-white/40 text-sm mt-2 tracking-widest">MANAGE YOUR ANIME DATABASE</p>
+                                        </div>
+                                        <div className="flex gap-2 bg-white/5 p-1 rounded-lg">
+                                            <button 
+                                                onClick={() => setViewMode("grid")}
+                                                className={`p-2 rounded transition-colors ${viewMode === 'grid' ? 'bg-[var(--accent)] text-black' : 'text-white/50 hover:text-white'}`}
+                                            >
+                                                <Grid size={20} />
+                                            </button>
+                                            <button 
+                                                onClick={() => setViewMode("list")}
+                                                className={`p-2 rounded transition-colors ${viewMode === 'list' ? 'bg-[var(--accent)] text-black' : 'text-white/50 hover:text-white'}`}
+                                            >
+                                                <List size={20} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    {favorites.length === 0 ? (
+                                        <div className="text-center text-white/40 font-grotesk mt-20 p-12 border border-dashed border-white/10 rounded-2xl">
+                                            <p className="text-xl mb-2">No frequencies stored in memory.</p>
+                                            <p className="text-sm">Add to archives via the heart icon on any anime page.</p>
+                                        </div>
+                                    ) : (
+                                        viewMode === 'grid' ? (
+                                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
+                                                {favorites.map((anime, i) => (
+                                                    <motion.div
+                                                        key={anime.id}
+                                                        initial={{ opacity: 0, y: 20 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        transition={{ delay: i * 0.05 }}
+                                                        className="group relative cursor-pointer gpu-accelerated bg-white/5 rounded-xl border border-white/10 overflow-hidden hover:border-[var(--accent)] transition-colors"
+                                                        onClick={() => { onSelect(anime); onClose(); }}
+                                                    >
+                                                        <div className="aspect-[2/3] overflow-hidden bg-black">
+                                                            <img src={anime.image} alt={anime.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                                        </div>
+                                                        <div className="p-3">
+                                                            <h4 className="font-oswald text-sm leading-tight text-white group-hover:text-[var(--accent)] transition-colors line-clamp-1 mb-1">{anime.title}</h4>
+                                                            <div className="flex justify-between items-center text-[10px] font-grotesk text-white/60">
+                                                                <span className="flex items-center gap-1">
+                                                                    {getStatusIcon(anime.status)} {anime.status || 'Planning'}
+                                                                </span>
+                                                                <span className="bg-white/10 px-1.5 py-0.5 rounded">
+                                                                    {anime.watched || 0}/{anime.totalEpisodes || '?'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </motion.div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col gap-3">
+                                                {favorites.map((anime, i) => (
+                                                    <motion.div
+                                                        key={anime.id}
+                                                        initial={{ opacity: 0, x: -20 }}
+                                                        animate={{ opacity: 1, x: 0 }}
+                                                        transition={{ delay: i * 0.03 }}
+                                                        className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/10 hover:border-white/30 transition-colors group"
+                                                    >
+                                                        {/* Info Section (Click to View) */}
+                                                        <div 
+                                                            className="flex items-center gap-4 flex-grow cursor-pointer"
+                                                            onClick={() => { onSelect(anime); onClose(); }}
+                                                        >
+                                                            <div className="w-12 h-16 bg-black/50 rounded overflow-hidden flex-shrink-0 border border-white/10">
+                                                                <img src={anime.image} className="w-full h-full object-cover" />
+                                                            </div>
+                                                            <div className="flex-grow min-w-0">
+                                                                <h4 className="font-oswald text-lg text-white group-hover:text-[var(--accent)] transition-colors truncate">{anime.title}</h4>
+                                                                <p className="text-white/40 text-xs font-grotesk">Total Ep: {anime.totalEpisodes || '?'}</p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Controls Section (Prevent propagation to keep list open) */}
+                                                        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto mt-2 md:mt-0 pl-16 md:pl-0" onClick={(e) => e.stopPropagation()}>
+                                                            
+                                                            {/* Status Select */}
+                                                            <div className="relative group/select">
+                                                                <select 
+                                                                    value={anime.status || "Planning"} 
+                                                                    onChange={(e) => onUpdateEntry(anime.id, { status: e.target.value })}
+                                                                    className="appearance-none bg-black border border-white/20 text-white/80 text-xs font-grotesk py-2 pl-3 pr-8 rounded-lg outline-none focus:border-[var(--accent)] cursor-pointer hover:bg-white/5 transition-colors uppercase tracking-wider w-[140px]"
+                                                                >
+                                                                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                                                </select>
+                                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white/40">▼</div>
+                                                            </div>
+
+                                                            {/* Episode Stepper */}
+                                                            <div className="flex items-center bg-black border border-white/20 rounded-lg h-[34px]">
+                                                                <button 
+                                                                    onClick={() => onUpdateEntry(anime.id, { watched: Math.max(0, (anime.watched || 0) - 1) })}
+                                                                    className="px-3 h-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                                                                >
+                                                                    <Minus size={14} />
+                                                                </button>
+                                                                <span className="w-12 text-center text-sm font-oswald text-white tabular-nums border-x border-white/10 h-full flex items-center justify-center">
+                                                                    {anime.watched || 0}
+                                                                </span>
+                                                                <button 
+                                                                    onClick={() => onUpdateEntry(anime.id, { watched: Math.min(anime.totalEpisodes || 9999, (anime.watched || 0) + 1) })}
+                                                                    className="px-3 h-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                                                                >
+                                                                    <Plus size={14} />
+                                                                </button>
+                                                            </div>
+
+                                                            {/* Delete Button */}
+                                                            <button 
+                                                                onClick={() => onDeleteEntry(anime.id)}
+                                                                className="p-2 text-white/20 hover:text-red-500 transition-colors ml-2"
+                                                                title="Remove from List"
+                                                            >
+                                                                <Trash2 size={18} />
+                                                            </button>
+                                                        </div>
+                                                    </motion.div>
+                                                ))}
+                                            </div>
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            );
+        };
+
         const SearchOverlay = ({ isOpen, onClose, onSelect }) => {
             const [query, setQuery] = useState("");
             const [activeGenre, setActiveGenre] = useState(null);
@@ -246,7 +569,13 @@
             const abortControllerRef = useRef(null);
 
             useEffect(() => {
-                if (isOpen && inputRef.current) setTimeout(() => inputRef.current.focus(), 100);
+                if (isOpen) {
+                    document.body.style.overflow = 'hidden';
+                    if (inputRef.current) setTimeout(() => inputRef.current.focus(), 100);
+                } else {
+                    document.body.style.overflow = '';
+                }
+                return () => { document.body.style.overflow = ''; }
             }, [isOpen]);
 
             useEffect(() => {
@@ -285,7 +614,7 @@
                         setResults([]);
                         setLoading(false);
                     }
-                }, 300);
+                }, 400);
 
                 return () => clearTimeout(delayDebounceFn);
             }, [query, activeGenre]);
@@ -294,57 +623,42 @@
                 <AnimatePresence>
                     {isOpen && (
                         <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md overflow-y-auto overflow-x-hidden"
+                            initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+                            animate={{ opacity: 1, backdropFilter: "blur(16px)" }}
+                            exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
+                            transition={{ duration: 0.3 }}
+                            className="fixed inset-0 z-[100] bg-black/80 overflow-y-auto overflow-x-hidden no-flicker"
                         >
                             <div className="flex flex-col items-center min-h-screen pt-24 px-4 pb-20 w-full relative">
-                                <button onClick={onClose} className="fixed top-6 right-6 z-[101] p-3 rounded-full bg-white/10 hover:bg-white/20 transition text-white border border-white/10">
+                                <button onClick={onClose} className="fixed top-6 right-6 z-[101] p-3 rounded-full bg-white/10 hover:bg-white/20 transition text-white border border-white/10 active:scale-95">
                                     <X size={20} />
                                 </button>
-
                                 <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-w-4xl relative shrink-0">
                                     <input
                                         ref={inputRef}
                                         placeholder="SEARCH ARCHIVES..."
                                         value={query}
                                         onChange={(e) => { setActiveGenre(null); setQuery(e.target.value); }}
-                                        className="w-full bg-transparent border-b-2 border-white/20 py-4 md:py-8 text-center font-oswald text-3xl md:text-7xl font-bold uppercase text-white placeholder-white/10 outline-none focus:border-[var(--accent)] transition-colors"
+                                        className="w-full bg-transparent border-b-2 border-white/20 py-4 md:py-8 text-center font-oswald text-3xl md:text-6xl font-bold uppercase text-white placeholder-white/10 outline-none focus:border-[var(--accent)] transition-colors"
                                     />
                                 </motion.div>
-
-                                <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="mt-6 md:mt-8 w-full max-w-4xl">
-                                    <div className="flex flex-wrap gap-2 md:gap-3 justify-center">
+                                <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="mt-8 w-full max-w-4xl">
+                                    <div className="flex flex-wrap gap-2 justify-center">
                                         {GENRES.map((genre) => (
-                                            <button
-                                                key={genre}
-                                                onClick={() => { setQuery(""); setActiveGenre(genre === activeGenre ? null : genre); }}
-                                                className={`px-4 py-2 md:px-6 md:py-2 rounded-full border text-[10px] md:text-xs font-bold uppercase tracking-widest transition-all duration-300 ${activeGenre === genre ? 'bg-[var(--accent)] text-black border-[var(--accent)] scale-105' : 'bg-transparent text-white/50 border-white/10 hover:border-white/40 hover:text-white'}`}
-                                            >
-                                                {genre}
-                                            </button>
+                                            <button key={genre} onClick={() => { setQuery(""); setActiveGenre(genre === activeGenre ? null : genre); }} className={`px-5 py-2 rounded-full border text-xs font-bold uppercase tracking-widest transition-all duration-300 active:scale-95 ${activeGenre === genre ? 'bg-[var(--accent)] text-black border-[var(--accent)]' : 'bg-transparent text-white/50 border-white/10 hover:border-white/40 hover:text-white'}`}>{genre}</button>
                                         ))}
                                     </div>
                                 </motion.div>
-
-                                <div className="mt-8 md:mt-12 w-full max-w-6xl grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
+                                <div className="mt-12 w-full max-w-6xl grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-6">
                                     {loading ? [...Array(10)].map((_, i) => <div key={i} className="aspect-[2/3] rounded-xl bg-white/5 animate-pulse border border-white/5" />) : (
                                         results.map((anime, i) => (
-                                            <motion.div
-                                                key={anime.id}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ duration: 0.2, delay: i * 0.03 }}
-                                                className="group relative cursor-pointer"
-                                                onClick={() => onSelect(anime)}
-                                            >
-                                                <div className="aspect-[2/3] overflow-hidden rounded-xl bg-white/5 mb-4 border border-white/10 group-hover:border-[var(--accent)] transition-colors">
-                                                    <img src={anime.image} alt={anime.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110 grayscale group-hover:grayscale-0" />
+                                            <motion.div key={anime.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3, delay: i * 0.03 }} className="group relative cursor-pointer gpu-accelerated" onClick={() => onSelect(anime)}>
+                                                <div className="aspect-[2/3] overflow-hidden rounded-xl bg-white/5 mb-3 border border-white/10 group-hover:border-[var(--accent)] transition-colors">
+                                                    <img loading="lazy" src={anime.image} alt={anime.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                                                 </div>
                                                 {anime.score && <div className="absolute top-2 right-2 px-2 py-1 bg-black/80 backdrop-blur-sm rounded border border-white/10 flex items-center gap-1 z-10"><Star size={8} className="text-[var(--accent)] fill-[var(--accent)]" /><span className="text-[10px] font-bold font-oswald text-white">{anime.score}</span></div>}
-                                                <h4 className="font-oswald text-sm md:text-lg leading-tight text-white group-hover:text-[var(--accent)] transition-colors line-clamp-1">{anime.title}</h4>
-                                                <p className="font-grotesk text-[10px] md:text-xs text-white/40 mt-1">{anime.year}</p>
+                                                <h4 className="font-oswald text-sm leading-tight text-white group-hover:text-[var(--accent)] transition-colors line-clamp-1">{anime.title}</h4>
+                                                <p className="font-grotesk text-[10px] text-white/40 mt-1">{anime.year}</p>
                                             </motion.div>
                                         ))
                                     )}
@@ -356,13 +670,11 @@
             );
         };
 
-        // 3. SUB COMPONENTS
         const Counter = ({ value }) => {
             const ref = useRef(null);
             const motionValue = useMotionValue(0);
-            const springValue = useSpring(motionValue, { damping: 50, stiffness: 100 });
-            const isInView = useInView(ref, { once: true, margin: "-100px" });
-
+            const springValue = useSpring(motionValue, { damping: 30, stiffness: 100 });
+            const isInView = useInView(ref, { once: true, margin: "0px" });
             useEffect(() => { if (isInView) motionValue.set(value); }, [isInView, value]);
             useEffect(() => springValue.on("change", (latest) => { if (ref.current) ref.current.textContent = Number.isInteger(value) ? Math.floor(latest).toFixed(0) : latest.toFixed(1); }), [springValue, value]);
             return <span ref={ref} />;
@@ -386,11 +698,11 @@
         const BentoCard = ({ title, value, sub, icon: Icon, delay = 0, isScore = false, color, isStudio = false }) => {
             return (
                 <motion.div
-                    initial={{ opacity: 0, y: 50 }}
+                    initial={{ opacity: 0, y: 30 }}
                     whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true, margin: "-50px" }}
-                    transition={{ duration: 0.8, delay, ease: [0.22, 1, 0.36, 1] }}
-                    className={`group relative overflow-hidden rounded-3xl p-6 backdrop-blur-md transition-colors ${isStudio ? 'accent-bg text-black' : 'border border-white/10 bg-white/5 hover:bg-white/10'}`}
+                    viewport={{ once: true, margin: "-10%" }}
+                    transition={{ duration: 0.6, delay, ease: "easeOut" }}
+                    className={`group relative overflow-hidden rounded-3xl p-6 backdrop-blur-md transition-all hover:translate-y-[-4px] ${isStudio ? 'accent-bg text-black' : 'border border-white/10 bg-white/5 hover:bg-white/10'}`}
                     style={!isStudio ? { borderColor: 'rgba(255,255,255,0.1)' } : {}}
                 >
                     <div className="absolute -right-4 -top-4 opacity-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-12">{Icon && <Icon size={120} />}</div>
@@ -421,19 +733,14 @@
         const DecryptText = ({ text }) => {
             const cleanText = text ? text.replace(/<[^>]*>/g, '') : "Loading data...";
             return (
-                <motion.p 
-                    initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-10%" }}
-                    variants={{ hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.005, delayChildren: 0.1 } } }}
-                    className="font-grotesk text-lg leading-relaxed text-white/90 md:text-xl lg:text-2xl"
-                >
+                <motion.p initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-10%" }} variants={{ hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.002, delayChildren: 0.1 } } }} className="font-grotesk text-lg leading-relaxed text-white/90 md:text-xl lg:text-2xl">
                     {cleanText.split(" ").map((word, i) => (
-                        <motion.span key={i} variants={{ hidden: { opacity: 0, filter: "blur(8px)", y: 10 }, visible: { opacity: 1, filter: "blur(0px)", y: 0, transition: { duration: 0.5, ease: "easeOut" } } }} className="inline-block mr-1.5">{word}</motion.span>
+                        <motion.span key={i} variants={{ hidden: { opacity: 0, filter: "blur(5px)", y: 5 }, visible: { opacity: 1, filter: "blur(0px)", y: 0, transition: { duration: 0.4 } } }} className="inline-block mr-1.5">{word}</motion.span>
                     ))}
                 </motion.p>
             );
         };
 
-        // API Helper
         const fetchAnimeDetails = async (title, image) => {
             try {
                 const kitsuReq = fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(title)}`).then(r => r.json());
@@ -443,7 +750,8 @@
                 const [kitsuRes, anilistRes] = await Promise.all([kitsuReq, anilistReq]);
 
                 if (kitsuRes.data && kitsuRes.data.length > 0 && anilistRes.data && anilistRes.data.Media) {
-                    const kAttr = kitsuRes.data[0].attributes;
+                    const kItem = kitsuRes.data[0];
+                    const kAttr = kItem.attributes;
                     const aMedia = anilistRes.data.Media;
                     const displayTitle = kAttr.canonicalTitle || kAttr.titles.en || kAttr.titles.en_jp;
                     
@@ -454,6 +762,7 @@
                     const rankValue = kAttr.ratingRank || kAttr.popularityRank || "--";
 
                     return {
+                        id: kItem.id, 
                         title: displayTitle.toUpperCase(), 
                         japanese: kAttr.titles.ja_jp || kAttr.titles.en_jp,
                         score: kAttr.averageRating ? (parseFloat(kAttr.averageRating) / 10).toFixed(1) : "0.0", 
@@ -465,7 +774,8 @@
                         tags: aMedia.genres ? aMedia.genres.slice(0, 3) : ['Action'],
                         studio: aMedia.studios?.nodes?.[0]?.name || "Unknown Studio",
                         characters: aMedia.characters?.edges || [],
-                        streamingUrl: finalStreamingUrl
+                        streamingUrl: finalStreamingUrl,
+                        image: image 
                     };
                 }
             } catch (error) { console.error("Data load failed", error); }
@@ -477,27 +787,170 @@
             const { scrollY } = useScroll();
             const [appVisible, setAppVisible] = useState(false);
             const [searchOpen, setSearchOpen] = useState(false);
+            const [favOpen, setFavOpen] = useState(false);
+            const [authOpen, setAuthOpen] = useState(false);
+            const [authError, setAuthError] = useState(null);
             const [slideIndex, setSlideIndex] = useState(0);
             const [slidesData, setSlidesData] = useState({});
             const [manualSelection, setManualSelection] = useState(null);
             const [manualData, setManualData] = useState(null);
             const [isShuffling, setIsShuffling] = useState(false);
             const [shufflePreview, setShufflePreview] = useState(null);
+            
+            // Backend State
+            const [user, setUser] = useState(null);
+            const [favorites, setFavorites] = useState([]);
 
             const currentSlide = HERO_SLIDES[slideIndex];
 
-            // Auto-Rotate
+            // --- FIREBASE AUTH LOGIC ---
+            useEffect(() => {
+                if (!auth) return;
+
+                const initAuth = async () => {
+                     // Check environment token
+                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        try {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } catch (e) {
+                            console.warn("Custom token auth failed, falling back to anonymous", e);
+                            await signInAnonymously(auth);
+                        }
+                     } else {
+                        if (!auth.currentUser) {
+                            await signInAnonymously(auth);
+                        }
+                     }
+                };
+                initAuth();
+
+                const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+                    setUser(currentUser);
+                });
+                return () => unsubscribeAuth();
+            }, []);
+
+            // Handle Email/Password Login
+            const handleEmailLogin = async (email, password) => {
+                setAuthError(null);
+                if (!auth) { setAuthError("System Error: Auth module offline."); return; }
+                
+                try {
+                    await signInWithEmailAndPassword(auth, email, password);
+                    setAuthOpen(false);
+                } catch (e) {
+                    console.error("Login failed", e);
+                    let msg = "Invalid credentials.";
+                    if (e.code === 'auth/user-not-found') msg = "Agent identity not recognized.";
+                    if (e.code === 'auth/wrong-password') msg = "Access key incorrect.";
+                    if (e.code === 'auth/invalid-email') msg = "Invalid ID format.";
+                    setAuthError(msg);
+                }
+            };
+
+            // Handle Email/Password Registration
+            const handleEmailRegister = async (email, password) => {
+                setAuthError(null);
+                if (!auth) { setAuthError("System Error: Auth module offline."); return; }
+
+                try {
+                    await createUserWithEmailAndPassword(auth, email, password);
+                    setAuthOpen(false);
+                } catch (e) {
+                    console.error("Registration failed", e);
+                    let msg = "Registration failed.";
+                    if (e.code === 'auth/email-already-in-use') msg = "Identity already registered in mainframe.";
+                    if (e.code === 'auth/weak-password') msg = "Access key security level too low.";
+                    setAuthError(msg);
+                }
+            };
+
+            const handleLogout = async () => {
+                if (!auth) return;
+                try {
+                    await signOut(auth);
+                    await signInAnonymously(auth); 
+                } catch (e) {
+                    console.error("Logout failed", e);
+                }
+            }
+
+            // --- FIRESTORE LOGIC ---
+            useEffect(() => {
+                if (!user || !db) return;
+                try {
+                    const q = collection(db, 'artifacts', pathAppId, 'users', user.uid, 'animeList');
+                    const unsubscribe = onSnapshot(q, (snapshot) => {
+                        const favs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        setFavorites(favs);
+                    }, (error) => console.error("Firestore Error", error));
+                    return () => unsubscribe();
+                } catch (e) { console.error("Firestore hook failed", e); }
+            }, [user]);
+
+            const updateEntry = async (animeId, updates) => {
+                if (!user || !db) return;
+                const docRef = doc(db, 'artifacts', pathAppId, 'users', user.uid, 'animeList', String(animeId));
+                try {
+                    await updateDoc(docRef, updates);
+                } catch (e) {
+                    console.error("Failed to update entry", e);
+                }
+            };
+
+            const deleteEntry = async (animeId) => {
+                if (!user || !db) return;
+                const docRef = doc(db, 'artifacts', pathAppId, 'users', user.uid, 'animeList', String(animeId));
+                try {
+                    await deleteDoc(docRef);
+                } catch (e) {
+                    console.error("Failed to delete entry", e);
+                }
+            };
+
+            const toggleFavorite = async (animeData) => {
+                if (!user || !animeData || !db) return;
+                
+                if (!animeData.id) return;
+
+                const docId = String(animeData.id);
+                const docRef = doc(db, 'artifacts', pathAppId, 'users', user.uid, 'animeList', docId);
+
+                const isFav = favorites.some(f => String(f.id) === docId);
+
+                if (isFav) {
+                    await deleteDoc(docRef);
+                } else {
+                    // Safe parsing of total episodes
+                    let totalEps = 0;
+                    if (typeof animeData.episodes === 'number') totalEps = animeData.episodes;
+                    else if (typeof animeData.episodes === 'string' && animeData.episodes !== '?') {
+                        totalEps = parseInt(animeData.episodes) || 0;
+                    }
+
+                    await setDoc(docRef, {
+                        id: animeData.id,
+                        title: animeData.title,
+                        image: animeData.coverImage || animeData.image,
+                        totalEpisodes: totalEps,
+                        watched: 0,
+                        status: 'Planning', // Default status on add
+                        addedAt: Date.now()
+                    });
+                }
+            };
+            // ----------------------
+
             useEffect(() => {
                 const timer = setInterval(() => {
                     const isHeroVisible = window.scrollY < (window.innerHeight * 0.5);
-                    if (isHeroVisible && !searchOpen && !manualSelection && !isShuffling) { 
+                    if (isHeroVisible && !searchOpen && !favOpen && !authOpen && !manualSelection && !isShuffling && document.hasFocus()) { 
                         setSlideIndex((prev) => (prev + 1) % HERO_SLIDES.length);
                     }
                 }, 8000); 
                 return () => clearInterval(timer);
-            }, [slideIndex, searchOpen, manualSelection, isShuffling]);
+            }, [slideIndex, searchOpen, favOpen, authOpen, manualSelection, isShuffling]);
 
-            // Preload
             useEffect(() => {
                 const fetchAllSlides = async () => {
                     const results = await Promise.all(HERO_SLIDES.map(slide => fetchAnimeDetails(slide.query, slide.image)));
@@ -510,11 +963,18 @@
 
             const handleSearchSelect = async (anime) => {
                 setSearchOpen(false);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
                 setManualSelection(anime); 
                 setManualData(null); 
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                
                 const details = await fetchAnimeDetails(anime.title, anime.image);
-                setManualData(details);
+                if (details && details.coverImage) {
+                    const img = new Image();
+                    img.src = details.coverImage;
+                    img.onload = () => { setManualData(details); }
+                } else {
+                     setManualData(details);
+                }
             };
 
             const handleShuffle = async () => {
@@ -557,45 +1017,88 @@
             const titleText = activeData?.title || (manualSelection ? manualSelection.title : "INITIALIZING");
             const getFontSize = (text) => text.length > 25 ? "text-[6vw] md:text-[7vw]" : text.length > 15 ? "text-[8vw] md:text-[10vw]" : "text-[10vw] md:text-[12vw]";
 
-            // Motion Values
+            const isCurrentFav = activeData && favorites.some(f => String(f.id) === String(activeData.id));
+
+            // Animation values
             const yTitle = useTransform(scrollY, [0, 500], [0, 200]);
             const scaleTitle = useTransform(scrollY, [0, 400], [1, 0.6]); 
             const opacityHero = useTransform(scrollY, [0, 600], [1, 0]);
             const scaleHero = useTransform(scrollY, [0, 600], [1, 1.1]);
             const fillOpacity = useTransform(scrollY, [0, 300], [0, 1]);
             const strokeOpacity = useTransform(scrollY, [0, 300], [1, 0]);
-            const x = useMotionValue(0);
-            const y = useMotionValue(0);
-            const rotateX = useTransform(y, [-500, 500], [5, -5]);
-            const rotateY = useTransform(x, [-500, 500], [-5, 5]);
+            
+            const mouseX = useMotionValue(0);
+            const mouseY = useMotionValue(0);
+            const springConfig = { damping: 40, stiffness: 300 };
+            const rotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [3, -3]), springConfig);
+            const rotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-3, 3]), springConfig);
+
+            const handleMouseMove = useCallback((e) => {
+                const { innerWidth, innerHeight } = window;
+                mouseX.set((e.clientX / innerWidth) - 0.5);
+                mouseY.set((e.clientY / innerHeight) - 0.5);
+            }, [mouseX, mouseY]);
 
             return (
                 <div 
                     className="min-h-screen bg-[#050505] text-white overflow-x-hidden transition-colors duration-1000" 
-                    onMouseMove={(e) => { x.set(e.clientX - window.innerWidth/2); y.set(e.clientY - window.innerHeight/2); }}
+                    onMouseMove={handleMouseMove}
                     style={{ '--accent': manualSelection ? '#facc15' : currentSlide.color }}
                 >
                     <IntroSequence onReveal={() => setAppVisible(true)} onComplete={() => setAppVisible(true)} />
                     <SearchOverlay isOpen={searchOpen} onClose={() => setSearchOpen(false)} onSelect={handleSearchSelect} />
+                    <FavoritesOverlay 
+                        isOpen={favOpen} 
+                        onClose={() => setFavOpen(false)} 
+                        favorites={favorites} 
+                        onSelect={handleSearchSelect} 
+                        onUpdateEntry={updateEntry}
+                        onDeleteEntry={deleteEntry}
+                    />
+                    <AuthPage 
+                        isOpen={authOpen} 
+                        onClose={() => { setAuthOpen(false); setAuthError(null); }} 
+                        user={user} 
+                        onLogin={handleEmailLogin}
+                        onRegister={handleEmailRegister} 
+                        onLogout={handleLogout} 
+                        error={authError}
+                        clearError={() => setAuthError(null)}
+                    />
 
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: appVisible ? 1 : 0 }} transition={{ duration: 1.5, ease: "easeOut" }} style={{ width: '100%' }}>
-                        <motion.nav style={{ opacity: fillOpacity }} className="fixed top-0 left-0 z-50 w-full border-b border-white/10 bg-black/80 backdrop-blur-md px-6 py-4 flex justify-between items-center">
+                        <motion.nav style={{ opacity: fillOpacity }} className="fixed top-0 left-0 z-50 w-full border-b border-white/10 bg-black/80 backdrop-blur-md px-6 py-4 flex justify-between items-center will-change-opacity">
                             <span className="font-oswald text-xl font-bold tracking-tighter accent-text">ANIMESMERENS</span>
-                            <div className="flex gap-4">
-                                <button onClick={() => setSearchOpen(true)} className="rounded-full bg-white/10 p-2 hover:bg-white/20 transition group"><Search size={18} className="text-white group-hover:text-[var(--accent)] transition-colors"/></button>
-                                <button onClick={() => activeData?.streamingUrl && window.open(activeData.streamingUrl, '_blank')} className="rounded-full accent-bg px-6 py-2 font-oswald text-black font-bold uppercase tracking-wider transition hover:brightness-110 flex items-center gap-2">Watch Now <Play size={16} fill="black" /></button>
+                            <div className="flex gap-4 items-center">
+                                <button onClick={() => setSearchOpen(true)} className="rounded-full bg-white/10 p-2 hover:bg-white/20 transition active:scale-95 group"><Search size={18} className="text-white group-hover:text-[var(--accent)] transition-colors"/></button>
+                                <button onClick={() => setFavOpen(true)} className="rounded-full bg-white/10 p-2 hover:bg-white/20 transition active:scale-95 group relative">
+                                    <Heart size={18} className={`${favorites.length > 0 ? 'text-[var(--accent)] fill-[var(--accent)]' : 'text-white'} transition-colors`} />
+                                    {favorites.length > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-black" />}
+                                </button>
+                                <button onClick={() => setAuthOpen(true)} className="rounded-full bg-white/10 p-2 hover:bg-white/20 transition active:scale-95 group relative border border-white/5 hover:border-[var(--accent)]">
+                                    {user && !user.isAnonymous && user.photoURL ? (
+                                        <div className="w-[18px] h-[18px] rounded-full overflow-hidden">
+                                            <img src={user.photoURL} className="w-full h-full object-cover" alt="User" />
+                                        </div>
+                                    ) : (
+                                        <User size={18} className="text-white group-hover:text-[var(--accent)] transition-colors"/>
+                                    )}
+                                </button>
+                                <button onClick={() => activeData?.streamingUrl && window.open(activeData.streamingUrl, '_blank')} className="rounded-full accent-bg px-6 py-2 font-oswald text-black font-bold uppercase tracking-wider transition hover:brightness-110 active:scale-95 flex items-center gap-2">Watch Now <Play size={16} fill="black" /></button>
                             </div>
                         </motion.nav>
 
                         <section className="relative h-screen w-full overflow-hidden flex items-center justify-center perspective-1000">
                             <div className="absolute inset-0 z-0 bg-black">
                                 <AnimatePresence initial={false} mode="popLayout">
-                                    {!isShuffling && (
+                                    {isShuffling ? (
+                                        <motion.div key="shuffle-skeleton" className="absolute inset-0 h-full w-full bg-black z-50 overflow-hidden" initial={{ opacity: 1 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.1 }} />
+                                    ) : (
                                         <motion.div key={activeId} className="absolute inset-0 h-full w-full" initial={{ opacity: 0, scale: 1.15 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 1.2, ease: [0.165, 0.84, 0.44, 1] }}>
                                             <motion.div style={{ rotateX, rotateY, scale: scaleHero, opacity: opacityHero }} className="h-full w-full">
                                                 <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent z-10" />
                                                 <div className="absolute inset-0 bg-black/30 z-10" />
-                                                {activeImage && <img src={activeImage} alt={activeId} className="h-full w-full object-cover object-center" />}
+                                                {activeImage && <SmoothHeroImage src={activeImage} alt={activeId} />}
                                             </motion.div>
                                         </motion.div>
                                     )}
@@ -605,32 +1108,45 @@
                             <div className="relative z-20 flex flex-col items-center justify-center w-full px-4 text-center">
                                 <div className="relative w-full flex justify-center">
                                     <AnimatePresence mode="wait">
-                                        <motion.div key={isShuffling ? 'shuffling-text' : activeId} initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -50, opacity: 0 }} transition={{ duration: 0.5 }} className="relative w-full max-w-[95vw] flex justify-center">
+                                        <motion.div key={isShuffling ? 'shuffling-text' : activeId} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} transition={{ duration: 0.4 }} className="relative w-full max-w-[95vw] flex justify-center will-change-transform">
                                             <motion.h1 style={{ y: yTitle, scale: scaleTitle, opacity: strokeOpacity }} className={`font-oswald ${getFontSize(titleText)} py-4 leading-[0.9] font-bold text-stroke tracking-tighter uppercase text-center break-words`}>{titleText}</motion.h1>
                                             <motion.h1 style={{ y: yTitle, scale: scaleTitle, opacity: fillOpacity, position: 'absolute', top: 0, left: 0, right: 0, color: '#fff' }} className={`font-oswald ${getFontSize(titleText)} py-4 leading-[0.9] font-bold tracking-tighter uppercase text-center break-words pointer-events-none`}>{titleText}</motion.h1>
                                         </motion.div>
                                     </AnimatePresence>
                                 </div>
 
-                                <motion.div style={{ opacity: opacityHero, y: yTitle }} className="mt-8 flex flex-col items-center gap-4">
+                                <motion.div style={{ opacity: opacityHero, y: yTitle }} className="mt-8 flex flex-col items-center gap-4 will-change-transform">
                                     <div className="flex flex-wrap justify-center gap-2">
                                         {(activeData?.tags || []).map((tag, i) => <span key={i} className="border border-white/20 bg-white/5 px-3 py-1 text-xs font-grotesk uppercase tracking-widest backdrop-blur-sm">{tag}</span>)}
                                         {isLoading && <span className="text-xs font-grotesk animate-pulse accent-text">{isShuffling ? "RANDOMIZING SELECTION..." : "LOADING ASSETS..."}</span>}
                                     </div>
-                                    <AnimatePresence mode="wait">
-                                        <motion.p key={activeId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="font-grotesk text-white/60 tracking-widest text-sm">{activeData?.japanese}</motion.p>
-                                    </AnimatePresence>
+                                    <div className="flex items-center gap-4 mt-2">
+                                        <AnimatePresence mode="wait">
+                                            <motion.p key={activeId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="font-grotesk text-white/60 tracking-widest text-sm">{activeData?.japanese}</motion.p>
+                                        </AnimatePresence>
+                                        {activeData && !isLoading && (
+                                            <button 
+                                                onClick={() => toggleFavorite(activeData)}
+                                                className="group relative p-2 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
+                                            >
+                                                <Heart 
+                                                    size={20} 
+                                                    className={`transition-all duration-300 ${isCurrentFav ? 'fill-[var(--accent)] text-[var(--accent)]' : 'text-white/60 group-hover:text-white'}`} 
+                                                />
+                                            </button>
+                                        )}
+                                    </div>
                                 </motion.div>
                             </div>
 
                             <div className="absolute bottom-10 right-10 z-30 flex items-center gap-6">
-                                <button onClick={handleShuffle} disabled={isShuffling} className={`group rounded-full border border-white/10 bg-black/20 p-2 backdrop-blur-sm transition-all ${isShuffling ? 'opacity-50 cursor-not-allowed border-[var(--accent)] animate-spin' : 'hover:bg-white/10 hover:border-[var(--accent)]'}`} title="Random Anime"><Shuffle size={16} className={`text-white/70 transition-colors ${!isShuffling && 'group-hover:text-white'}`} /></button>
-                                {manualSelection && <button onClick={() => { setManualSelection(null); setManualData(null); }} className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-red-500/20 text-white hover:bg-red-500/40 backdrop-blur-md transition-colors mr-4"><X size={16} /> <span className="text-xs font-bold uppercase tracking-widest">Close Entry</span></button>}
+                                <button onClick={handleShuffle} disabled={isShuffling} className={`group rounded-full border border-white/10 bg-black/20 p-2 backdrop-blur-sm transition-all active:scale-90 ${isShuffling ? 'opacity-50 cursor-not-allowed border-[var(--accent)] animate-spin' : 'hover:bg-white/10 hover:border-[var(--accent)]'}`} title="Random Anime"><Shuffle size={16} className={`text-white/70 transition-colors ${!isShuffling && 'group-hover:text-white'}`} /></button>
+                                {manualSelection && <button onClick={() => { setManualSelection(null); setManualData(null); }} className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-red-500/20 text-white hover:bg-red-500/40 backdrop-blur-md transition-colors mr-4 active:scale-95"><X size={16} /> <span className="text-xs font-bold uppercase tracking-widest">Close Entry</span></button>}
                                 {!manualSelection && !isShuffling && (
                                     <div className="flex gap-2 items-center">
-                                        {HERO_SLIDES.map((_, idx) => <div key={idx} onClick={() => setSlideIndex(idx)} className={`h-1 cursor-pointer transition-all duration-500 ${idx === slideIndex ? 'w-8 accent-bg' : 'w-4 bg-white/30 hover:bg-white'}`} />)}
-                                        <button onClick={() => setSlideIndex((p) => (p - 1 + HERO_SLIDES.length) % HERO_SLIDES.length)} className="group rounded-full border border-white/10 bg-black/20 p-2 backdrop-blur-sm transition-all hover:bg-white/10 hover:border-[var(--accent)] ml-4"><ChevronLeft size={16} className="text-white/70 transition-colors group-hover:text-white" /></button>
-                                        <button onClick={() => setSlideIndex((p) => (p + 1) % HERO_SLIDES.length)} className="group rounded-full border border-white/10 bg-black/20 p-2 backdrop-blur-sm transition-all hover:bg-white/10 hover:border-[var(--accent)]"><ChevronRight size={16} className="text-white/70 transition-colors group-hover:text-white" /></button>
+                                        {HERO_SLIDES.map((_, idx) => <div key={idx} onClick={() => setSlideIndex(idx)} className={`h-1 cursor-pointer transition-all duration-500 rounded-full ${idx === slideIndex ? 'w-8 accent-bg' : 'w-4 bg-white/30 hover:bg-white'}`} />)}
+                                        <button onClick={() => setSlideIndex((p) => (p - 1 + HERO_SLIDES.length) % HERO_SLIDES.length)} className="group rounded-full border border-white/10 bg-black/20 p-2 backdrop-blur-sm transition-all hover:bg-white/10 hover:border-[var(--accent)] ml-4 active:scale-90"><ChevronLeft size={16} className="text-white/70 transition-colors group-hover:text-white" /></button>
+                                        <button onClick={() => setSlideIndex((p) => (p + 1) % HERO_SLIDES.length)} className="group rounded-full border border-white/10 bg-black/20 p-2 backdrop-blur-sm transition-all hover:bg-white/10 hover:border-[var(--accent)] active:scale-90"><ChevronRight size={16} className="text-white/70 transition-colors group-hover:text-white" /></button>
                                     </div>
                                 )}
                             </div>
@@ -645,7 +1161,7 @@
                                     </motion.div>
                                 </div>
                                 <div className="lg:col-span-8 min-h-[200px]">
-                                    {isLoading ? <div className="h-full w-full animate-pulse bg-white/5 rounded-xl" /> : <div key={activeId}><DecryptText text={activeData?.synopsis || "Accessing database..."} /></div>}
+                                    {isLoading ? <div className="h-40 w-full animate-pulse bg-white/5 rounded-xl border border-white/5" /> : <div key={activeId}><DecryptText text={activeData?.synopsis || "Accessing database..."} /></div>}
                                 </div>
                             </section>
 
@@ -668,29 +1184,37 @@
                                 <div className="relative w-full overflow-hidden mask-linear-gradient">
                                     <div className="absolute left-0 top-0 z-10 h-full w-24 bg-gradient-to-r from-[#050505] to-transparent" />
                                     <div className="absolute right-0 top-0 z-10 h-full w-24 bg-gradient-to-l from-[#050505] to-transparent" />
-                                    <div className="flex gap-6 w-max hover:pause-animation">
-                                        {activeData?.characters && [...activeData.characters, ...activeData.characters].map((edge, idx) => (
-                                            <motion.div key={`${edge.node.name.full}-${idx}`} className="relative flex-shrink-0 w-[200px] aspect-[2/3] group cursor-pointer" whileHover={{ scale: 1.05, zIndex: 10 }} animate={{ x: ["0%", "-100%"] }} transition={{ ease: "linear", duration: 30, repeat: Infinity }}>
+                                    
+                                    <div className="flex gap-6 w-max animate-marquee hover:[animation-play-state:paused] gpu-accelerated">
+                                        {(activeData?.characters && activeData.characters.length > 0) ? 
+                                            [...activeData.characters, ...activeData.characters, ...activeData.characters, ...activeData.characters].map((edge, idx) => (
+                                            <div key={`${edge.node.name.full}-${idx}`} className="relative flex-shrink-0 w-[200px] aspect-[2/3] group cursor-pointer transition-transform duration-300 hover:scale-105">
                                                 <div className="absolute inset-0 rounded-xl overflow-hidden bg-white/5 border border-white/5 group-hover:border-[var(--accent)] transition-colors">
-                                                    <img src={edge.node.image.large} alt={edge.node.name.full} className="h-full w-full object-cover transition-all duration-500 group-hover:scale-110 grayscale group-hover:grayscale-0" />
+                                                    <img loading="lazy" src={edge.node.image.large} alt={edge.node.name.full} className="h-full w-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
                                                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-80" />
                                                     <div className="absolute bottom-0 left-0 p-4 w-full">
                                                         <h4 className="font-oswald text-lg uppercase font-bold text-white transition-colors accent-text-hover truncate">{edge.node.name.full}</h4>
                                                         <p className="font-grotesk text-xs text-white/60">{edge.role}</p>
                                                     </div>
                                                 </div>
-                                            </motion.div>
-                                        ))}
-                                        {(!activeData?.characters || activeData.characters.length === 0) && <div className="w-full text-center text-white/30 font-grotesk">Scanning Personnel Database...</div>}
+                                            </div>
+                                        )) : (
+                                            <div className="flex items-center justify-center w-[80vw] h-[200px] border border-white/5 rounded-xl bg-white/5">
+                                                <span className="text-white/30 font-grotesk animate-pulse">Scanning Personnel Database...</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="mt-4 flex justify-center text-xs text-white/30 font-grotesk tracking-widest">/// DRAG TO EXPLORE</div>
+                                <div className="mt-4 flex justify-center text-xs text-white/30 font-grotesk tracking-widest">/// HOVER TO INSPECT</div>
                             </section>
                         </main>
 
-                        <footer className="border-t border-white/10 bg-black py-12 text-center">
+                        <footer className="border-t border-white/10 bg-black py-16 text-center relative overflow-hidden">
                             <h2 className="font-oswald text-[15vw] leading-none text-white/5 uppercase select-none pointer-events-none transition-all duration-1000">{(activeData?.title || "ANIMESMERENS").split(" ")[0]}</h2>
-                            <div className="font-grotesk text-sm text-white/40 mt-[-5vw] relative z-10">© 2026 ANIMESMERENS PROJECT.</div>
+                            <div className="font-grotesk text-sm text-white/40 mt-[-5vw] relative z-10 flex flex-col gap-2 items-center">
+                                <span>© 2026 ANIMESMERENS PROJECT.</span>
+                                <span className="text-white/20 text-xs">Take a break. Hydrate.</span>
+                            </div>
                         </footer>
                     </motion.div>
                 </div>
@@ -698,7 +1222,7 @@
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(React.createElement(App));
     </script>
 </body>
 </html>
