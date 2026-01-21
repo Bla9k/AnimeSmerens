@@ -98,14 +98,14 @@
         // --- FIREBASE IMPORTS ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, linkWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- GLOBAL FIREBASE INIT ---
         let auth;
         let db;
-        // Use the environment provided app ID for path partitioning, fallback to default
-        const pathAppId = typeof __app_id !== 'undefined' ? __app_id : 'anime-smerens-default';
+        // Use a FIXED app ID to ensure data persists across app updates/reloads/forks
+        const pathAppId = 'anime-smerens-v1-stable'; 
 
         try {
             // Priority: User's provided config to ensure they connect to THEIR project where they have admin access
@@ -237,7 +237,7 @@
                         <div className="absolute bottom-10 right-10 overflow-hidden">
                              <div ref={counterRef} className="font-grotesk font-bold text-4xl text-white tracking-widest will-change-opacity">000%</div>
                         </div>
-                        <div id="text-container" className="opacity-0 flex flex-col items-center justify-center mix-blend-difference w-full will-change-transform">
+                        <div id="text-container" className="opacity-0 flex flex-col items-center justify-center w-full z-20 will-change-transform">
                             <div className="overflow-hidden py-10 -my-10 w-full flex justify-center">
                                 <h1 id="text-top" className="font-oswald text-[15vw] leading-[0.9] font-bold text-white tracking-tighter translate-x-[-100%] origin-bottom will-change-transform">ANIME</h1>
                             </div>
@@ -250,147 +250,11 @@
             );
         };
 
-        // AuthPage Component
-        const AuthPage = ({ isOpen, onClose, user, onLogin, onRegister, onLogout, error, clearError }) => {
-            const [email, setEmail] = useState("");
-            const [password, setPassword] = useState("");
-            const [isRegistering, setIsRegistering] = useState(false);
-
-            useEffect(() => {
-                if(isOpen) {
-                    setEmail("");
-                    setPassword("");
-                    if(clearError) clearError();
-                }
-            }, [isOpen, isRegistering]);
-
-            const handleSubmit = (e) => {
-                e.preventDefault();
-                if (isRegistering) {
-                    onRegister(email, password);
-                } else {
-                    onLogin(email, password);
-                }
-            };
-
-            return (
-                <AnimatePresence>
-                    {isOpen && (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center overflow-hidden"
-                        >
-                            <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
-                                <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(50,50,50,0.4),transparent_70%)]" />
-                                <div className="absolute bottom-0 right-0 w-1/2 h-1/2 bg-[var(--accent)] blur-[150px] opacity-10" />
-                            </div>
-
-                            <button onClick={onClose} className="absolute top-8 right-8 z-[201] p-4 rounded-full bg-white/5 hover:bg-white/20 transition text-white border border-white/10 active:scale-95 group">
-                                <X size={24} className="group-hover:rotate-90 transition-transform duration-300" />
-                            </button>
-
-                            <motion.div 
-                                initial={{ y: 30, opacity: 0 }} 
-                                animate={{ y: 0, opacity: 1 }} 
-                                transition={{ delay: 0.1 }}
-                                className="relative z-10 w-full max-w-md px-6"
-                            >
-                                <div className="text-center mb-12">
-                                    <h2 className="font-oswald text-6xl font-bold uppercase text-white mb-2 tracking-tighter">
-                                        System <span className="text-stroke">Access</span>
-                                    </h2>
-                                    <p className="font-grotesk text-[var(--accent)] text-sm tracking-widest uppercase">
-                                        {user && !user.isAnonymous ? "/// IDENTITY VERIFIED" : "/// AUTHENTICATION REQUIRED"}
-                                    </p>
-                                </div>
-
-                                {user && !user.isAnonymous ? (
-                                    <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl p-8 flex flex-col items-center gap-6">
-                                        <div className="w-24 h-24 rounded-full border-2 border-[var(--accent)] p-1">
-                                            <div className="w-full h-full rounded-full bg-white/10 flex items-center justify-center overflow-hidden">
-                                                <User size={40} className="text-white/50" />
-                                            </div>
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="text-white font-oswald text-xl tracking-wide">{user.email}</p>
-                                            <p className="text-white/40 font-grotesk text-xs mt-1 uppercase tracking-widest">Session Active</p>
-                                        </div>
-                                        <button 
-                                            onClick={() => { onLogout(); onClose(); }}
-                                            className="w-full py-4 border border-red-500/50 text-red-400 font-oswald font-bold uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all duration-300 rounded-lg flex items-center justify-center gap-2"
-                                        >
-                                            <LogOut size={18} /> Terminate Session
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
-                                        {error && (
-                                            <div className="mb-6 p-4 bg-red-500/10 border-l-2 border-red-500 text-red-200 text-xs font-grotesk">
-                                                <span className="font-bold block mb-1">ERROR CODE: AUTH_FAIL</span>
-                                                {error}
-                                                {error.includes("operation-not-allowed") && (
-                                                    <p className="mt-2 text-white/50 text-[10px] leading-tight">
-                                                        ADMIN ACTION: Go to Firebase Console &rarr; Authentication &rarr; Sign-in method &rarr; Enable Email/Password.
-                                                    </p>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-                                            <div className="group relative">
-                                                <Mail className="absolute left-0 top-3 text-white/30 group-focus-within:text-[var(--accent)] transition-colors" size={20} />
-                                                <input 
-                                                    type="email" 
-                                                    placeholder="AGENT ID (EMAIL)" 
-                                                    value={email}
-                                                    onChange={(e) => setEmail(e.target.value)}
-                                                    className="w-full bg-transparent border-b border-white/20 py-3 pl-8 text-white font-grotesk outline-none focus:border-[var(--accent)] transition-colors placeholder:text-white/20"
-                                                    required
-                                                />
-                                            </div>
-                                            <div className="group relative">
-                                                <Lock className="absolute left-0 top-3 text-white/30 group-focus-within:text-[var(--accent)] transition-colors" size={20} />
-                                                <input 
-                                                    type="password" 
-                                                    placeholder="ACCESS KEY (PASSWORD)" 
-                                                    value={password}
-                                                    onChange={(e) => setPassword(e.target.value)}
-                                                    className="w-full bg-transparent border-b border-white/20 py-3 pl-8 text-white font-grotesk outline-none focus:border-[var(--accent)] transition-colors placeholder:text-white/20"
-                                                    required
-                                                />
-                                            </div>
-
-                                            <button 
-                                                type="submit"
-                                                className="mt-4 w-full py-4 bg-white text-black font-oswald font-bold text-lg uppercase tracking-widest hover:bg-[var(--accent)] transition-colors rounded-lg flex items-center justify-center gap-2"
-                                            >
-                                                {isRegistering ? <Key size={20} /> : <LogIn size={20} />}
-                                                <span>{isRegistering ? "Initialize New Agent" : "Access Mainframe"}</span>
-                                            </button>
-                                        </form>
-
-                                        <div className="mt-8 text-center">
-                                            <button 
-                                                onClick={() => { setIsRegistering(!isRegistering); if(clearError) clearError(); }}
-                                                className="text-xs font-grotesk text-white/40 hover:text-white transition-colors uppercase tracking-widest border-b border-transparent hover:border-white"
-                                            >
-                                                {isRegistering ? "Return to Login Sequence" : "New User? Request Access"}
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </motion.div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            );
-        };
-
         // UPDATED: Profile List Manager (Favorites Overlay)
         const FavoritesOverlay = ({ isOpen, onClose, favorites, onSelect, onUpdateEntry, onDeleteEntry }) => {
             const [viewMode, setViewMode] = useState("list"); // Default to list for easier management
+            const [editingEpId, setEditingEpId] = useState(null); // Track which anime's episode is being edited via input
+            const [tempEpValue, setTempEpValue] = useState("");   // Temporary value for the input
 
             // Prevent scroll when open
             useEffect(() => {
@@ -408,6 +272,50 @@
                     case 'Dropped': return <XCircle size={14} className="text-red-400" />;
                     default: return <BookOpen size={14} className="text-blue-400" />; // Planning
                 }
+            };
+
+            // Helper for status colors in the new UI
+            const getStatusColor = (status) => {
+                switch(status) {
+                    case 'Watching': return 'text-[var(--accent)] border-[var(--accent)] shadow-[0_0_10px_-5px_var(--accent)]';
+                    case 'Completed': return 'text-green-400 border-green-400 shadow-[0_0_10px_-5px_rgba(74,222,128,0.5)]';
+                    case 'On Hold': return 'text-orange-400 border-orange-400';
+                    case 'Dropped': return 'text-red-400 border-red-400';
+                    default: return 'text-blue-400 border-blue-400';
+                }
+            };
+
+            const handleEpInputChange = (e, anime) => {
+                const val = e.target.value;
+                // Allow empty string or numbers only
+                if (val === '' || /^\d+$/.test(val)) {
+                    setTempEpValue(val);
+                }
+            };
+
+            const handleEpInputBlur = (anime) => {
+                setEditingEpId(null);
+                let newEp = parseInt(tempEpValue);
+                if (isNaN(newEp)) newEp = anime.watched || 0;
+                
+                // Clamp value
+                const maxEp = anime.totalEpisodes || 9999;
+                newEp = Math.max(0, Math.min(maxEp, newEp));
+                
+                if (newEp !== anime.watched) {
+                    onUpdateEntry(anime.id, { watched: newEp });
+                }
+            };
+
+            const handleEpInputKeyDown = (e, anime) => {
+                if (e.key === 'Enter') {
+                    handleEpInputBlur(anime);
+                }
+            };
+
+            const startEditingEp = (anime) => {
+                setEditingEpId(anime.id);
+                setTempEpValue(String(anime.watched || 0));
             };
 
             return (
@@ -505,46 +413,74 @@
                                                         </div>
 
                                                         {/* Controls Section (Prevent propagation to keep list open) */}
-                                                        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto mt-2 md:mt-0 pl-16 md:pl-0" onClick={(e) => e.stopPropagation()}>
+                                                        <div className="flex flex-wrap items-center justify-end gap-3 w-full md:w-auto mt-4 md:mt-0 pl-0 md:pl-4" onClick={(e) => e.stopPropagation()}>
                                                             
-                                                            {/* Status Select */}
+                                                            {/* Status Selector - Cyberpunk Style */}
                                                             <div className="relative group/select">
+                                                                <div className={`absolute inset-0 bg-current opacity-5 rounded-lg pointer-events-none ${getStatusColor(anime.status)}`}></div>
                                                                 <select 
                                                                     value={anime.status || "Planning"} 
                                                                     onChange={(e) => onUpdateEntry(anime.id, { status: e.target.value })}
-                                                                    className="appearance-none bg-black border border-white/20 text-white/80 text-xs font-grotesk py-2 pl-3 pr-8 rounded-lg outline-none focus:border-[var(--accent)] cursor-pointer hover:bg-white/5 transition-colors uppercase tracking-wider w-[140px]"
+                                                                    className={`appearance-none bg-transparent border text-xs font-oswald font-bold py-2 pl-3 pr-8 rounded-lg outline-none cursor-pointer uppercase tracking-wider w-[130px] transition-all ${getStatusColor(anime.status || 'Planning')} hover:bg-white/5`}
                                                                 >
-                                                                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                                                    {STATUS_OPTIONS.map(s => <option key={s} value={s} className="bg-black text-white">{s.toUpperCase()}</option>)}
                                                                 </select>
-                                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white/40">▼</div>
+                                                                <div className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${getStatusColor(anime.status || 'Planning').split(' ')[0]}`}>
+                                                                    <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-current"></div>
+                                                                </div>
                                                             </div>
 
-                                                            {/* Episode Stepper */}
-                                                            <div className="flex items-center bg-black border border-white/20 rounded-lg h-[34px]">
+                                                            {/* Episode Stepper - Digital Tuner Style */}
+                                                            <div className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-lg p-1 h-[36px]">
                                                                 <button 
                                                                     onClick={() => onUpdateEntry(anime.id, { watched: Math.max(0, (anime.watched || 0) - 1) })}
-                                                                    className="px-3 h-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                                                                    className="w-8 h-full flex items-center justify-center rounded hover:bg-white/10 text-white/40 hover:text-white transition-colors active:scale-90"
                                                                 >
-                                                                    <Minus size={14} />
+                                                                    <Minus size={12} />
                                                                 </button>
-                                                                <span className="w-12 text-center text-sm font-oswald text-white tabular-nums border-x border-white/10 h-full flex items-center justify-center">
-                                                                    {anime.watched || 0}
-                                                                </span>
+                                                                
+                                                                <div 
+                                                                    className="flex flex-col items-center justify-center w-20 h-full px-1 border-x border-white/5 bg-white/5 mx-1 relative overflow-hidden group/counter cursor-text"
+                                                                    onClick={() => startEditingEp(anime)}
+                                                                >
+                                                                    {editingEpId === anime.id ? (
+                                                                        <input 
+                                                                            type="text" 
+                                                                            value={tempEpValue}
+                                                                            onChange={(e) => handleEpInputChange(e, anime)}
+                                                                            onBlur={() => handleEpInputBlur(anime)}
+                                                                            onKeyDown={(e) => handleEpInputKeyDown(e, anime)}
+                                                                            autoFocus
+                                                                            className="w-full h-full bg-transparent text-center text-sm font-oswald font-bold text-white outline-none tabular-nums"
+                                                                        />
+                                                                    ) : (
+                                                                        <span className="text-sm font-oswald font-bold text-white relative z-10 tabular-nums">
+                                                                            {String(anime.watched || 0).padStart(2, '0')} <span className="text-[10px] text-white/30 font-grotesk">/ {anime.totalEpisodes || '?'}</span>
+                                                                        </span>
+                                                                    )}
+                                                                    
+                                                                    {/* Progress Bar Background */}
+                                                                    <div 
+                                                                        className="absolute bottom-0 left-0 h-[2px] bg-[var(--accent)] transition-all duration-300 opacity-50 group-hover/counter:opacity-100"
+                                                                        style={{ width: `${Math.min(100, ((anime.watched || 0) / (anime.totalEpisodes || 1)) * 100)}%` }}
+                                                                    />
+                                                                </div>
+
                                                                 <button 
                                                                     onClick={() => onUpdateEntry(anime.id, { watched: Math.min(anime.totalEpisodes || 9999, (anime.watched || 0) + 1) })}
-                                                                    className="px-3 h-full hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                                                                    className="w-8 h-full flex items-center justify-center rounded hover:bg-white/10 text-white/40 hover:text-[var(--accent)] transition-colors active:scale-90"
                                                                 >
-                                                                    <Plus size={14} />
+                                                                    <Plus size={12} />
                                                                 </button>
                                                             </div>
 
                                                             {/* Delete Button */}
                                                             <button 
                                                                 onClick={() => onDeleteEntry(anime.id)}
-                                                                className="p-2 text-white/20 hover:text-red-500 transition-colors ml-2"
-                                                                title="Remove from List"
+                                                                className="w-[36px] h-[36px] flex items-center justify-center rounded-lg border border-white/5 hover:border-red-500/50 hover:bg-red-500/10 text-white/20 hover:text-red-500 transition-all ml-1"
+                                                                title="Remove"
                                                             >
-                                                                <Trash2 size={18} />
+                                                                <Trash2 size={14} />
                                                             </button>
                                                         </div>
                                                     </motion.div>
@@ -554,6 +490,391 @@
                                     )}
                                 </div>
                             </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            );
+        };
+
+        // UPDATED: Profile & Auth Manager
+        const ProfileOverlay = ({ isOpen, onClose, user, onLogin, onRegister, onLogout, error, clearError, favorites, db, pathAppId }) => {
+            // Auth States
+            const [email, setEmail] = useState("");
+            const [password, setPassword] = useState("");
+            const [isRegistering, setIsRegistering] = useState(false);
+
+            // Profile States
+            const [profileData, setProfileData] = useState({
+                displayName: "AGENT",
+                bio: "No bio data available.",
+                avatar: null,
+                banner: "https://images.unsplash.com/photo-1577057867946-8e5033c46a60?q=80&w=2574&auto=format&fit=crop"
+            });
+            const [isEditing, setIsEditing] = useState(false);
+            const [editForm, setEditForm] = useState({});
+            const [isSaving, setIsSaving] = useState(false);
+
+            // Stats
+            const stats = useMemo(() => {
+                const completed = favorites.filter(f => f.status === 'Completed').length;
+                const watching = favorites.filter(f => f.status === 'Watching').length;
+                const totalEps = favorites.reduce((acc, curr) => acc + (curr.watched || 0), 0);
+                const estimatedMinutes = totalEps * 24;
+                const hours = Math.floor(estimatedMinutes / 60);
+                return { completed, watching, totalEps, hours };
+            }, [favorites]);
+
+            useEffect(() => {
+                if(isOpen) {
+                    if (!user) {
+                        setEmail("");
+                        setPassword("");
+                        if(clearError) clearError();
+                    } else {
+                        // Load Profile Data
+                        const loadProfile = async () => {
+                            if (!db) return;
+                            try {
+                                const docRef = doc(db, 'artifacts', pathAppId, 'users', user.uid, 'settings', 'profile');
+                                const docSnap = await getDoc(docRef);
+                                if (docSnap.exists()) {
+                                    setProfileData(prev => ({ ...prev, ...docSnap.data() }));
+                                }
+                            } catch(e) {
+                                console.error("Error loading profile:", e);
+                            }
+                        };
+                        loadProfile();
+                    }
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    document.body.style.overflow = '';
+                    setIsEditing(false);
+                    setEditForm({}); 
+                }
+                return () => { document.body.style.overflow = ''; }
+            }, [isOpen, user]);
+
+            // Initialize edit form when editing starts
+            useEffect(() => {
+                if (isEditing) {
+                    setEditForm(profileData);
+                }
+            }, [isEditing]);
+
+            const handleAuthSubmit = (e) => {
+                e.preventDefault();
+                if (isRegistering) onRegister(email, password);
+                else onLogin(email, password);
+            };
+
+            const handleSaveProfile = async () => {
+                if (!user || !db) return;
+                setIsSaving(true);
+                try {
+                    const docRef = doc(db, 'artifacts', pathAppId, 'users', user.uid, 'settings', 'profile');
+                    // Ensure we don't save undefined values
+                    const cleanForm = Object.fromEntries(
+                        Object.entries(editForm).filter(([_, v]) => v !== undefined)
+                    );
+                    const newData = { ...profileData, ...cleanForm };
+                    
+                    await setDoc(docRef, newData, { merge: true });
+                    setProfileData(newData);
+                    setIsEditing(false);
+                } catch (e) {
+                    console.error("Save failed", e);
+                    alert("Failed to save profile. Check internet connection.");
+                } finally {
+                    setIsSaving(false);
+                }
+            };
+
+            const handleFileUpload = (e, field) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                if (file.size > 500000) { 
+                    alert("File too large. Maximum size is 500KB.");
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    if (reader.result) {
+                        setEditForm(prev => ({ ...prev, [field]: reader.result }));
+                    }
+                };
+                reader.readAsDataURL(file);
+            };
+
+            return (
+                <AnimatePresence>
+                    {isOpen && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-md overflow-y-auto"
+                        >
+                            <button onClick={onClose} className="fixed top-6 right-6 z-[201] p-3 rounded-full bg-black/50 hover:bg-white/20 transition text-white border border-white/10 active:scale-95 group">
+                                <X size={24} className="group-hover:rotate-90 transition-transform duration-300" />
+                            </button>
+
+                            {(!user || user.isAnonymous) ? (
+                                <div className="min-h-screen flex items-center justify-center p-4">
+                                     <motion.div 
+                                        initial={{ y: 30, opacity: 0 }} 
+                                        animate={{ y: 0, opacity: 1 }} 
+                                        transition={{ delay: 0.1 }}
+                                        className="relative z-10 w-full max-w-md"
+                                    >
+                                        <div className="text-center mb-12">
+                                            <h2 className="font-oswald text-6xl font-bold uppercase text-white mb-2 tracking-tighter">
+                                                System <span className="text-stroke">Access</span>
+                                            </h2>
+                                            <p className="font-grotesk text-[var(--accent)] text-sm tracking-widest uppercase">
+                                                /// AUTHENTICATION REQUIRED
+                                            </p>
+                                        </div>
+
+                                        <div className="bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+                                            {error && (
+                                                <div className="mb-6 p-4 bg-red-500/10 border-l-2 border-red-500 text-red-200 text-xs font-grotesk">
+                                                    <span className="font-bold block mb-1">ERROR CODE: AUTH_FAIL</span>
+                                                    {error}
+                                                </div>
+                                            )}
+
+                                            <form onSubmit={handleAuthSubmit} className="flex flex-col gap-6">
+                                                <div className="group relative">
+                                                    <Mail className="absolute left-0 top-3 text-white/30 group-focus-within:text-[var(--accent)] transition-colors" size={20} />
+                                                    <input 
+                                                        type="email" 
+                                                        placeholder="AGENT ID (EMAIL)" 
+                                                        value={email}
+                                                        onChange={(e) => setEmail(e.target.value)}
+                                                        className="w-full bg-transparent border-b border-white/20 py-3 pl-8 text-white font-grotesk outline-none focus:border-[var(--accent)] transition-colors placeholder:text-white/20"
+                                                        required
+                                                    />
+                                                </div>
+                                                <div className="group relative">
+                                                    <Lock className="absolute left-0 top-3 text-white/30 group-focus-within:text-[var(--accent)] transition-colors" size={20} />
+                                                    <input 
+                                                        type="password" 
+                                                        placeholder="ACCESS KEY (PASSWORD)" 
+                                                        value={password}
+                                                        onChange={(e) => setPassword(e.target.value)}
+                                                        className="w-full bg-transparent border-b border-white/20 py-3 pl-8 text-white font-grotesk outline-none focus:border-[var(--accent)] transition-colors placeholder:text-white/20"
+                                                        required
+                                                    />
+                                                </div>
+
+                                                <button type="submit" className="mt-4 w-full py-4 bg-white text-black font-oswald font-bold text-lg uppercase tracking-widest hover:bg-[var(--accent)] transition-colors rounded-lg flex items-center justify-center gap-2">
+                                                    {isRegistering ? <Key size={20} /> : <LogIn size={20} />}
+                                                    <span>{isRegistering ? "Initialize New Agent" : "Access Mainframe"}</span>
+                                                </button>
+                                            </form>
+
+                                            <div className="mt-8 text-center">
+                                                <button onClick={() => { setIsRegistering(!isRegistering); if(clearError) clearError(); }} className="text-xs font-grotesk text-white/40 hover:text-white transition-colors uppercase tracking-widest border-b border-transparent hover:border-white">
+                                                    {isRegistering ? "Return to Login Sequence" : "New User? Request Access"}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                </div>
+                            ) : (
+                                /* --- LOGGED IN PROFILE STATE --- */
+                                <div className="min-h-screen w-full bg-[#050505]">
+                                    {/* Banner */}
+                                    <div className="relative h-[30vh] md:h-[40vh] w-full overflow-hidden bg-white/5">
+                                        <div className="absolute inset-0 bg-gradient-to-t from-[#050505] to-transparent z-10" />
+                                        <img 
+                                            key={isEditing ? (editForm.banner || profileData.banner) : profileData.banner} 
+                                            src={isEditing ? (editForm.banner || profileData.banner) : profileData.banner} 
+                                            className="w-full h-full object-cover opacity-60" 
+                                            alt="Banner" 
+                                            onError={(e) => e.target.style.display = 'none'}
+                                        />
+                                        {isEditing && (
+                                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
+                                                <label className="cursor-pointer px-6 py-3 bg-black/50 backdrop-blur-md border border-white/20 rounded-full text-white font-oswald uppercase tracking-widest hover:bg-[var(--accent)] hover:text-black transition-colors shadow-xl">
+                                                    Change Banner
+                                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'banner')} />
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="max-w-7xl mx-auto px-6 relative z-20 -mt-20 md:-mt-32 pb-20">
+                                        <div className="flex flex-col md:flex-row items-end gap-8 mb-12">
+                                            {/* Avatar */}
+                                            <div className="relative group">
+                                                <div className="w-32 h-32 md:w-48 md:h-48 rounded-full border-4 border-[#050505] bg-black overflow-hidden relative">
+                                                    {(isEditing ? (editForm.avatar || profileData.avatar) : profileData.avatar) ? (
+                                                        <img 
+                                                            key={isEditing ? (editForm.avatar || profileData.avatar) : profileData.avatar}
+                                                            src={isEditing ? (editForm.avatar || profileData.avatar) : profileData.avatar} 
+                                                            className="w-full h-full object-cover" 
+                                                            alt="Avatar" 
+                                                            onError={(e) => { e.target.style.display = 'none'; e.target.parentElement.classList.add('fallback-avatar'); }}
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center bg-white/10"><User size={64} className="text-white/20" /></div>
+                                                    )}
+                                                    {isEditing && (
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/60 cursor-pointer z-30 transition-colors hover:bg-black/40">
+                                                            <label className="w-full h-full flex flex-col items-center justify-center gap-1 cursor-pointer">
+                                                                <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'avatar')} />
+                                                                <div className="p-2 bg-white/10 rounded-full mb-1"><User size={20} /></div>
+                                                                <span className="text-[var(--accent)] font-bold text-xs uppercase tracking-widest">Upload</span>
+                                                            </label>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Header Info */}
+                                            <div className="flex-grow w-full">
+                                                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                                                    <div>
+                                                        {isEditing ? (
+                                                            <input 
+                                                                type="text" 
+                                                                value={editForm.displayName !== undefined ? editForm.displayName : profileData.displayName}
+                                                                onChange={(e) => setEditForm({...editForm, displayName: e.target.value})}
+                                                                className="bg-white/5 border-b border-white/20 text-3xl md:text-4xl font-oswald font-bold text-white w-full md:w-[400px] outline-none mb-2 rounded-t px-2"
+                                                                placeholder="DISPLAY NAME"
+                                                            />
+                                                        ) : (
+                                                            <h1 className="text-5xl md:text-7xl font-oswald font-bold text-white uppercase tracking-tighter leading-none break-words">
+                                                                {profileData.displayName}
+                                                            </h1>
+                                                        )}
+                                                        <p className="text-[var(--accent)] font-grotesk tracking-widest uppercase text-xs md:text-sm mt-2">
+                                                            /// AGENT ID: {user.uid.slice(0, 8)}
+                                                        </p>
+                                                    </div>
+                                                    
+                                                    <div className="flex gap-3 w-full md:w-auto">
+                                                        {isEditing ? (
+                                                            <>
+                                                                <button onClick={() => setIsEditing(false)} disabled={isSaving} className="flex-1 md:flex-none px-6 py-2 border border-red-500/50 text-red-400 font-oswald uppercase hover:bg-red-500/10 transition disabled:opacity-50 text-sm md:text-base">Cancel</button>
+                                                                <button onClick={handleSaveProfile} disabled={isSaving} className="flex-1 md:flex-none px-6 py-2 bg-[var(--accent)] text-black font-oswald uppercase font-bold hover:brightness-110 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm md:text-base">
+                                                                    {isSaving ? "Saving..." : "Save"}
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <button onClick={() => setIsEditing(true)} className="flex-1 md:flex-none px-6 py-2 border border-white/20 text-white font-oswald uppercase hover:bg-white/10 transition text-sm md:text-base">Edit Profile</button>
+                                                                <button onClick={() => { onLogout(); onClose(); }} className="px-4 py-2 bg-white/5 text-white/40 hover:text-red-400 hover:bg-red-500/10 transition"><LogOut size={20} /></button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 md:gap-12">
+                                            {/* Left Column: Bio & Stats */}
+                                            <div className="space-y-8">
+                                                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                                                    <h3 className="font-oswald text-xl uppercase text-white/50 mb-4">Bio_Data</h3>
+                                                    {isEditing ? (
+                                                        <textarea 
+                                                            value={editForm.bio !== undefined ? editForm.bio : profileData.bio}
+                                                            onChange={(e) => setEditForm({...editForm, bio: e.target.value})}
+                                                            className="w-full bg-black/50 border border-white/10 rounded p-3 text-white font-grotesk text-base min-h-[100px] outline-none focus:border-[var(--accent)]"
+                                                            placeholder="Enter user biography..."
+                                                        />
+                                                    ) : (
+                                                        <p className="font-grotesk text-white/80 leading-relaxed text-sm md:text-base">
+                                                            {profileData.bio}
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+                                                    <h3 className="font-oswald text-xl uppercase text-white/50 mb-6">Sync_Stats</h3>
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div className="p-4 bg-black/40 rounded-xl border border-white/5">
+                                                            <div className="text-white/40 text-[10px] font-grotesk uppercase tracking-widest mb-1">Total Time</div>
+                                                            <div className="text-2xl font-oswald font-bold text-white">{stats.hours}<span className="text-xs text-white/40 ml-1">HRS</span></div>
+                                                        </div>
+                                                        <div className="p-4 bg-black/40 rounded-xl border border-white/5">
+                                                            <div className="text-white/40 text-[10px] font-grotesk uppercase tracking-widest mb-1">Episodes</div>
+                                                            <div className="text-2xl font-oswald font-bold text-[var(--accent)]">{stats.totalEps}</div>
+                                                        </div>
+                                                        <div className="p-4 bg-black/40 rounded-xl border border-white/5">
+                                                            <div className="text-white/40 text-[10px] font-grotesk uppercase tracking-widest mb-1">Completed</div>
+                                                            <div className="text-2xl font-oswald font-bold text-green-400">{stats.completed}</div>
+                                                        </div>
+                                                        <div className="p-4 bg-black/40 rounded-xl border border-white/5">
+                                                            <div className="text-white/40 text-[10px] font-grotesk uppercase tracking-widest mb-1">Active</div>
+                                                            <div className="text-2xl font-oswald font-bold text-blue-400">{stats.watching}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Right Column: Recent Activity (Visual) */}
+                                            <div className="lg:col-span-2">
+                                                <h3 className="font-oswald text-2xl uppercase text-white mb-6 border-b border-white/10 pb-2">Recent <span className="text-[var(--accent)]">Uplinks</span></h3>
+                                                
+                                                {favorites.length === 0 ? (
+                                                    <div className="w-full h-40 border border-dashed border-white/10 rounded-2xl flex items-center justify-center text-white/30 font-grotesk uppercase tracking-widest">
+                                                        No data streams found
+                                                    </div>
+                                                ) : (
+                                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                                        {favorites.slice(0, 6).map((fav, i) => (
+                                                            <div key={fav.id} className="group relative aspect-video rounded-xl overflow-hidden bg-white/5 border border-white/10">
+                                                                <img src={fav.image} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-60 group-hover:opacity-100" />
+                                                                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+                                                                <div className="absolute bottom-0 left-0 p-3 w-full">
+                                                                    <h4 className="font-oswald text-sm text-white truncate">{fav.title}</h4>
+                                                                    <div className="flex justify-between items-center mt-1">
+                                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${fav.status === 'Watching' ? 'bg-blue-500/20 text-blue-300' : 'bg-green-500/20 text-green-300'}`}>
+                                                                            {fav.status}
+                                                                        </span>
+                                                                        <span className="text-[10px] font-grotesk text-white/60">{fav.watched} eps</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {isEditing && (
+                                                    <div className="mt-8 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl">
+                                                        <h4 className="text-[var(--accent)] font-oswald text-sm uppercase mb-1">Tip: Image Uploads</h4>
+                                                        <p className="text-white/60 text-xs font-grotesk">
+                                                            You can click the image to upload (Max 500KB) OR paste a direct URL below.
+                                                        </p>
+                                                        <div className="mt-2 flex flex-col gap-2">
+                                                            <input 
+                                                                type="text" 
+                                                                placeholder="Paste Banner URL here" 
+                                                                value={editForm.banner && !editForm.banner.startsWith('data:') ? editForm.banner : ""}
+                                                                onChange={(e) => setEditForm({...editForm, banner: e.target.value})}
+                                                                className="w-full bg-black/40 border border-white/10 rounded p-2 text-sm text-white outline-none focus:border-[var(--accent)]"
+                                                            />
+                                                            <input 
+                                                                type="text" 
+                                                                placeholder="Paste Avatar URL here" 
+                                                                value={editForm.avatar && !editForm.avatar.startsWith('data:') ? editForm.avatar : ""}
+                                                                onChange={(e) => setEditForm({...editForm, avatar: e.target.value})}
+                                                                className="w-full bg-black/40 border border-white/10 rounded p-2 text-sm text-white outline-none focus:border-[var(--accent)]"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -639,13 +960,13 @@
                                         placeholder="SEARCH ARCHIVES..."
                                         value={query}
                                         onChange={(e) => { setActiveGenre(null); setQuery(e.target.value); }}
-                                        className="w-full bg-transparent border-b-2 border-white/20 py-4 md:py-8 text-center font-oswald text-3xl md:text-6xl font-bold uppercase text-white placeholder-white/10 outline-none focus:border-[var(--accent)] transition-colors"
+                                        className="w-full bg-transparent border-b-2 border-white/20 py-4 md:py-8 text-center font-oswald text-2xl md:text-6xl font-bold uppercase text-white placeholder-white/10 outline-none focus:border-[var(--accent)] transition-colors"
                                     />
                                 </motion.div>
                                 <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }} className="mt-8 w-full max-w-4xl">
                                     <div className="flex flex-wrap gap-2 justify-center">
                                         {GENRES.map((genre) => (
-                                            <button key={genre} onClick={() => { setQuery(""); setActiveGenre(genre === activeGenre ? null : genre); }} className={`px-5 py-2 rounded-full border text-xs font-bold uppercase tracking-widest transition-all duration-300 active:scale-95 ${activeGenre === genre ? 'bg-[var(--accent)] text-black border-[var(--accent)]' : 'bg-transparent text-white/50 border-white/10 hover:border-white/40 hover:text-white'}`}>{genre}</button>
+                                            <button key={genre} onClick={() => { setQuery(""); setActiveGenre(genre === activeGenre ? null : genre); }} className={`px-4 md:px-5 py-2 rounded-full border text-xs font-bold uppercase tracking-widest transition-all duration-300 active:scale-95 ${activeGenre === genre ? 'bg-[var(--accent)] text-black border-[var(--accent)]' : 'bg-transparent text-white/50 border-white/10 hover:border-white/40 hover:text-white'}`}>{genre}</button>
                                         ))}
                                     </div>
                                 </motion.div>
@@ -702,28 +1023,28 @@
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true, margin: "-10%" }}
                     transition={{ duration: 0.6, delay, ease: "easeOut" }}
-                    className={`group relative overflow-hidden rounded-3xl p-6 backdrop-blur-md transition-all hover:translate-y-[-4px] ${isStudio ? 'accent-bg text-black' : 'border border-white/10 bg-white/5 hover:bg-white/10'}`}
+                    className={`group relative overflow-hidden rounded-3xl p-4 md:p-6 backdrop-blur-md transition-all hover:translate-y-[-4px] ${isStudio ? 'accent-bg text-black' : 'border border-white/10 bg-white/5 hover:bg-white/10'}`}
                     style={!isStudio ? { borderColor: 'rgba(255,255,255,0.1)' } : {}}
                 >
-                    <div className="absolute -right-4 -top-4 opacity-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-12">{Icon && <Icon size={120} />}</div>
+                    <div className="absolute -right-4 -top-4 opacity-10 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-12">{Icon && <Icon size={100} className="md:w-[120px] md:h-[120px]" />}</div>
                     <div className="relative z-10 flex h-full flex-col justify-between">
-                        <h3 className={`font-grotesk text-sm uppercase tracking-widest ${isStudio ? 'text-black/60 font-bold' : 'text-white/50'}`}>{title}</h3>
+                        <h3 className={`font-grotesk text-xs md:text-sm uppercase tracking-widest ${isStudio ? 'text-black/60 font-bold' : 'text-white/50'}`}>{title}</h3>
                         {isScore ? (
-                            <div className="mt-4 flex items-end gap-4"><DonutChart score={Number(value)} color={color} /><div className="mb-2"><span className="block text-xs text-white/40">MASTERPIECE</span><span className="block text-xs accent-text">CRITICAL ACCLAIM</span></div></div>
+                            <div className="mt-2 md:mt-4 flex items-end gap-4"><DonutChart score={Number(value)} color={color} /><div className="mb-2"><span className="block text-[10px] md:text-xs text-white/40">MASTERPIECE</span><span className="block text-[10px] md:text-xs accent-text">CRITICAL ACCLAIM</span></div></div>
                         ) : isStudio ? (
-                            <div className="mt-4"><ArrowUpRight className="absolute top-6 right-6 transition-transform group-hover:rotate-45" size={32}/><div className="font-oswald text-3xl font-bold uppercase leading-none break-words">{value}</div></div>
+                            <div className="mt-2 md:mt-4"><ArrowUpRight className="absolute top-4 right-4 md:top-6 md:right-6 transition-transform group-hover:rotate-45" size={24}/><div className="font-oswald text-2xl md:text-3xl font-bold uppercase leading-none break-words">{value}</div></div>
                         ) : (
-                            <div className="mt-4"><div className="font-oswald text-5xl font-bold text-white tracking-tight flex items-baseline gap-1">
-                                {typeof value === 'string' && value.includes('#') && <span className="text-2xl align-top text-[var(--accent)]">#</span>}
+                            <div className="mt-2 md:mt-4"><div className="font-oswald text-3xl md:text-5xl font-bold text-white tracking-tight flex items-baseline gap-1">
+                                {typeof value === 'string' && value.includes('#') && <span className="text-xl md:text-2xl align-top text-[var(--accent)]">#</span>}
                                 {(() => {
                                     const numeric = typeof value === 'string' ? parseFloat(value.replace(/[^0-9.]/g, '')) : value;
                                     if (isNaN(numeric)) return <span>{typeof value === 'string' ? value.replace('#', '') : value}</span>;
                                     return <Counter value={numeric} />;
                                 })()}
-                                {typeof value === 'string' && value.includes('M') && <span className="text-3xl">M</span>}
-                                {typeof value === 'string' && value.includes('K') && <span className="text-3xl">K</span>}
+                                {typeof value === 'string' && value.includes('M') && <span className="text-xl md:text-3xl">M</span>}
+                                {typeof value === 'string' && value.includes('K') && <span className="text-xl md:text-3xl">K</span>}
                             </div>
-                            {sub && <p className="mt-1 font-grotesk text-xs text-white/60">{sub}</p>}</div>
+                            {sub && <p className="mt-1 font-grotesk text-[10px] md:text-xs text-white/60">{sub}</p>}</div>
                         )}
                     </div>
                 </motion.div>
@@ -733,7 +1054,7 @@
         const DecryptText = ({ text }) => {
             const cleanText = text ? text.replace(/<[^>]*>/g, '') : "Loading data...";
             return (
-                <motion.p initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-10%" }} variants={{ hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.002, delayChildren: 0.1 } } }} className="font-grotesk text-lg leading-relaxed text-white/90 md:text-xl lg:text-2xl">
+                <motion.p initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-10%" }} variants={{ hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.002, delayChildren: 0.1 } } }} className="font-grotesk text-base md:text-lg leading-relaxed text-white/90 lg:text-2xl">
                     {cleanText.split(" ").map((word, i) => (
                         <motion.span key={i} variants={{ hidden: { opacity: 0, filter: "blur(5px)", y: 5 }, visible: { opacity: 1, filter: "blur(0px)", y: 0, transition: { duration: 0.4 } } }} className="inline-block mr-1.5">{word}</motion.span>
                     ))}
@@ -816,16 +1137,18 @@
                             console.warn("Custom token auth failed, falling back to anonymous", e);
                             await signInAnonymously(auth);
                         }
-                     } else {
-                        if (!auth.currentUser) {
-                            await signInAnonymously(auth);
-                        }
-                     }
+                     } 
+                     // REMOVED IMMEDIATE ANONYMOUS FALLBACK HERE TO PREVENT SESSION OVERWRITE
                 };
                 initAuth();
 
                 const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
-                    setUser(currentUser);
+                    if (currentUser) {
+                        setUser(currentUser);
+                    } else {
+                        // Only sign in anonymously if NO user is restored from session
+                        signInAnonymously(auth).catch(err => console.error("Auth init failed", err));
+                    }
                 });
                 return () => unsubscribeAuth();
             }, []);
@@ -844,23 +1167,41 @@
                     if (e.code === 'auth/user-not-found') msg = "Agent identity not recognized.";
                     if (e.code === 'auth/wrong-password') msg = "Access key incorrect.";
                     if (e.code === 'auth/invalid-email') msg = "Invalid ID format.";
+                    if (e.code === 'auth/invalid-credential') msg = "Invalid credentials.";
                     setAuthError(msg);
                 }
             };
 
-            // Handle Email/Password Registration
+            // Handle Email/Password Registration (With Account Linking)
             const handleEmailRegister = async (email, password) => {
                 setAuthError(null);
                 if (!auth) { setAuthError("System Error: Auth module offline."); return; }
 
                 try {
-                    await createUserWithEmailAndPassword(auth, email, password);
+                    // 1. Try to link the CURRENT anonymous user to this email credential
+                    // This preserves the current favorites/profile into the new permanent account.
+                    const credential = EmailAuthProvider.credential(email, password);
+                    
+                    if (auth.currentUser && auth.currentUser.isAnonymous) {
+                        await linkWithCredential(auth.currentUser, credential);
+                        console.log("Anonymous account successfully promoted.");
+                    } else {
+                        // Fallback for standard creation if not anon (shouldn't happen in this flow usually)
+                        await createUserWithEmailAndPassword(auth, email, password);
+                    }
                     setAuthOpen(false);
                 } catch (e) {
-                    console.error("Registration failed", e);
+                    console.error("Registration/Linking failed", e);
                     let msg = "Registration failed.";
-                    if (e.code === 'auth/email-already-in-use') msg = "Identity already registered in mainframe.";
-                    if (e.code === 'auth/weak-password') msg = "Access key security level too low.";
+                    
+                    // If linking fails because email exists, suggest logging in
+                    if (e.code === 'auth/email-already-in-use' || e.code === 'auth/credential-already-in-use') {
+                        msg = "Identity already registered. Please switch to Login mode.";
+                    } else if (e.code === 'auth/weak-password') {
+                        msg = "Access key security level too low (min 6 chars).";
+                    } else {
+                        msg = e.message || "Unknown error during initialization.";
+                    }
                     setAuthError(msg);
                 }
             };
@@ -869,7 +1210,8 @@
                 if (!auth) return;
                 try {
                     await signOut(auth);
-                    await signInAnonymously(auth); 
+                    // Reload page to ensure clean state or re-auth anonymously
+                    window.location.reload(); 
                 } catch (e) {
                     console.error("Logout failed", e);
                 }
@@ -1055,7 +1397,7 @@
                         onUpdateEntry={updateEntry}
                         onDeleteEntry={deleteEntry}
                     />
-                    <AuthPage 
+                    <ProfileOverlay 
                         isOpen={authOpen} 
                         onClose={() => { setAuthOpen(false); setAuthError(null); }} 
                         user={user} 
@@ -1064,16 +1406,18 @@
                         onLogout={handleLogout} 
                         error={authError}
                         clearError={() => setAuthError(null)}
+                        favorites={favorites}
+                        db={db}
+                        pathAppId={pathAppId}
                     />
 
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: appVisible ? 1 : 0 }} transition={{ duration: 1.5, ease: "easeOut" }} style={{ width: '100%' }}>
-                        <motion.nav style={{ opacity: fillOpacity }} className="fixed top-0 left-0 z-50 w-full border-b border-white/10 bg-black/80 backdrop-blur-md px-6 py-4 flex justify-between items-center will-change-opacity">
-                            <span className="font-oswald text-xl font-bold tracking-tighter accent-text">ANIMESMERENS</span>
+                        <motion.nav style={{ opacity: fillOpacity }} className="fixed top-0 left-0 z-50 w-full border-b border-white/10 bg-black/80 backdrop-blur-md px-4 py-3 md:px-6 md:py-4 flex justify-between items-center will-change-opacity">
+                            <span className="font-oswald text-lg md:text-xl font-bold tracking-tighter accent-text">ANIMESMERENS</span>
                             <div className="flex gap-4 items-center">
                                 <button onClick={() => setSearchOpen(true)} className="rounded-full bg-white/10 p-2 hover:bg-white/20 transition active:scale-95 group"><Search size={18} className="text-white group-hover:text-[var(--accent)] transition-colors"/></button>
                                 <button onClick={() => setFavOpen(true)} className="rounded-full bg-white/10 p-2 hover:bg-white/20 transition active:scale-95 group relative">
                                     <Heart size={18} className={`${favorites.length > 0 ? 'text-[var(--accent)] fill-[var(--accent)]' : 'text-white'} transition-colors`} />
-                                    {favorites.length > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-black" />}
                                 </button>
                                 <button onClick={() => setAuthOpen(true)} className="rounded-full bg-white/10 p-2 hover:bg-white/20 transition active:scale-95 group relative border border-white/5 hover:border-[var(--accent)]">
                                     {user && !user.isAnonymous && user.photoURL ? (
@@ -1084,7 +1428,9 @@
                                         <User size={18} className="text-white group-hover:text-[var(--accent)] transition-colors"/>
                                     )}
                                 </button>
-                                <button onClick={() => activeData?.streamingUrl && window.open(activeData.streamingUrl, '_blank')} className="rounded-full accent-bg px-6 py-2 font-oswald text-black font-bold uppercase tracking-wider transition hover:brightness-110 active:scale-95 flex items-center gap-2">Watch Now <Play size={16} fill="black" /></button>
+                                <button onClick={() => activeData?.streamingUrl && window.open(activeData.streamingUrl, '_blank')} className="rounded-full accent-bg px-3 py-2 md:px-6 font-oswald text-black font-bold uppercase tracking-wider transition hover:brightness-110 active:scale-95 flex items-center gap-2">
+                                    <span className="hidden md:inline">Watch Now</span> <Play size={16} fill="black" />
+                                </button>
                             </div>
                         </motion.nav>
 
@@ -1170,8 +1516,8 @@
                                     <h2 className="font-oswald text-5xl uppercase font-bold">Performance <span className="accent-text">Metrics</span></h2>
                                     <div className="hidden md:flex gap-2 text-xs font-grotesk text-white/40 uppercase tracking-widest"><span>Live Data</span><span className="animate-pulse text-green-500">●</span></div>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 h-auto md:h-[400px]">
-                                    <div className="md:col-span-2 md:row-span-2 h-full"><BentoCard title="Global Score" value={activeData?.score || 0} isScore={true} icon={Star} color={manualSelection ? '#facc15' : currentSlide.color} /></div>
+                                <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 h-auto md:h-[400px]">
+                                    <div className="col-span-2 md:col-span-2 md:row-span-2 h-full"><BentoCard title="Global Score" value={activeData?.score || 0} isScore={true} icon={Star} color={manualSelection ? '#facc15' : currentSlide.color} /></div>
                                     <BentoCard title="Rank" value={activeData?.rank || "#--"} sub="All Time" icon={TrendingUp} delay={0.1} color={manualSelection ? '#facc15' : currentSlide.color} />
                                     <BentoCard title="Popularity" value={activeData?.popularity || "0K"} sub="Active Trackers" icon={Users} delay={0.2} color={manualSelection ? '#facc15' : currentSlide.color} />
                                     <BentoCard title="Episodes" value={activeData?.episodes || 0} sub="24min / ep" icon={Clock} delay={0.3} color={manualSelection ? '#facc15' : currentSlide.color} />
